@@ -14,7 +14,7 @@ class AltUsdtNetworkWarningChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AquaChip.error(
-      label: context.loc.onlyForInsertAltUsdtNetwork(asset.nameWithStandard),
+      label: 'Only for ${asset.nameWithStandard}',
       colors: context.aquaColors,
       compact: true,
     );

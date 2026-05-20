@@ -6,16 +6,19 @@ import 'package:aqua/features/shared/shared.dart';
 import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
-final enabledServicesTypesProvider = AsyncNotifierProvider.autoDispose<
-    EnabledServicesTypesNotifier,
-    List<MarketplaceServiceAvailability>>(EnabledServicesTypesNotifier.new);
+final enabledServicesTypesProvider =
+    AsyncNotifierProvider.autoDispose<
+      EnabledServicesTypesNotifier,
+      List<MarketplaceServiceAvailability>
+    >(EnabledServicesTypesNotifier.new);
 
 class EnabledServicesTypesNotifier
     extends AutoDisposeAsyncNotifier<List<MarketplaceServiceAvailability>> {
   @override
   Future<List<MarketplaceServiceAvailability>> build() async {
-    final isMockDataEnabled =
-        ref.read(featureFlagsProvider).marketplaceTilesMockDataEnabled;
+    final isMockDataEnabled = ref
+        .read(featureFlagsProvider)
+        .marketplaceTilesMockDataEnabled;
 
     // If mock data is enabled, return all services as enabled
     if (isMockDataEnabled) {
@@ -44,9 +47,16 @@ class EnabledServicesTypesNotifier
         .map(MarketplaceServiceAvailability.fromResponse)
         .whereType<MarketplaceServiceAvailability>()
         .toList();
+    allServices.add(
+      const MarketplaceServiceAvailability(
+        type: MarketplaceServiceType.dlcs,
+        isEnabled: true,
+      ),
+    );
 
-    final currentRegion =
-        ref.watch(regionsProvider.select((p) => p.currentRegion));
+    final currentRegion = ref.watch(
+      regionsProvider.select((p) => p.currentRegion),
+    );
 
     return allServices.where((service) {
       if (!service.isEnabled) return false;
@@ -66,10 +76,7 @@ class EnabledServicesTypesNotifier
   List<MarketplaceServiceAvailability> _getMockMarketplaceServices() {
     return MarketplaceServiceType.values
         .map(
-          (type) => MarketplaceServiceAvailability(
-            type: type,
-            isEnabled: true,
-          ),
+          (type) => MarketplaceServiceAvailability(type: type, isEnabled: true),
         )
         .toList();
   }

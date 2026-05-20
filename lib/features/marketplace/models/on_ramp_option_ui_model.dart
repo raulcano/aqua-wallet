@@ -21,7 +21,7 @@ enum DeliveryOption {
   String get logo => switch (this) {
         btc => UiAssets.assetIcons.btc.path,
         lbtc => UiAssets.assetIcons.liquid.path,
-        lightning => UiAssets.assetIcons.l2.path,
+        lightning => UiAssets.assetIcons.l2Svg_.path,
         usdt => UiAssets.assetIcons.usdt.path,
       };
 }

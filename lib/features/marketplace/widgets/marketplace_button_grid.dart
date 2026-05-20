@@ -26,6 +26,7 @@ class MarketplaceButtonGrid extends HookConsumerWidget {
         MarketplaceServiceType.lendasat: () => const LendasatTile(),
         MarketplaceServiceType.chapsmart: () => const ChapsmartTile(),
         MarketplaceServiceType.moneybadger: () => const MoneyBadgerTile(),
+        MarketplaceServiceType.dlcs: () => const DlcsTile(),
       };
     }, []);
 
@@ -36,37 +37,32 @@ class MarketplaceButtonGrid extends HookConsumerWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: availableServices.when(
-          error: (e, _) => ErrorRetryButton(
-                onRetry: reload,
-              ),
-          loading: () => const Center(
-                child: CircularProgressIndicator(),
-              ),
-          data: (services) {
-            final enabledServices = services
-                .map((service) => service.type)
-                .map((type) => allServices[type]?.call())
-                .whereType<Widget>()
-                .toList();
+        error: (e, _) => ErrorRetryButton(onRetry: reload),
+        loading: () => const Center(child: CircularProgressIndicator()),
+        data: (services) {
+          final enabledServices = services
+              .map((service) => service.type)
+              .map((type) => allServices[type]?.call())
+              .whereType<Widget>()
+              .toList();
 
-            if (enabledServices.isEmpty) {
-              return ErrorRetryButton(
-                onRetry: reload,
-              );
-            }
-            return SingleChildScrollView(
-              child: LayoutGrid(
-                columnSizes: [1.fr, 1.fr],
-                rowSizes: List.generate(
-                  (enabledServices.length / 2).ceil(),
-                  (_) => auto,
-                ),
-                rowGap: 16,
-                columnGap: 16.0,
-                children: enabledServices,
+          if (enabledServices.isEmpty) {
+            return ErrorRetryButton(onRetry: reload);
+          }
+          return SingleChildScrollView(
+            child: LayoutGrid(
+              columnSizes: [1.fr, 1.fr],
+              rowSizes: List.generate(
+                (enabledServices.length / 2).ceil(),
+                (_) => auto,
               ),
-            );
-          }),
+              rowGap: 16,
+              columnGap: 16.0,
+              children: enabledServices,
+            ),
+          );
+        },
+      ),
     );
   }
 }

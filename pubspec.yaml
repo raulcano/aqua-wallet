@@ -96,6 +96,7 @@ dependencies:
   window_manager: 0.4.3
   jwt_decoder: ^2.0.1
   lwk: ^0.2.2
+  flare_flutter: ^3.0.2
 
 dev_dependencies:
   build_runner: ^2.4.6

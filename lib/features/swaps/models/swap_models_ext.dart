@@ -44,7 +44,7 @@ extension SwapAssetExt on SwapAsset {
 
   String getLogoUrl() {
     if (id == AssetIds.btc) return UiAssets.assetIcons.btc.path;
-    if (id == AssetIds.lightning) return UiAssets.assetIcons.l2.path;
+    if (id == AssetIds.lightning) return UiAssets.assetIcons.l2Svg_.path;
     if (isUSDt()) {
       switch (id) {
         case AssetIds.usdtEth:

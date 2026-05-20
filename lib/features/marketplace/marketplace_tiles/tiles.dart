@@ -2,6 +2,7 @@ export 'btc_map_tile.dart';
 export 'buy_bitcoin_tile.dart';
 export 'chapsmart_tile.dart';
 export 'debit_card_tile.dart';
+export 'dlcs_tile.dart';
 export 'moneybadger_tile.dart';
 export 'gift_card_tile.dart';
 export 'lendasat_tile.dart';

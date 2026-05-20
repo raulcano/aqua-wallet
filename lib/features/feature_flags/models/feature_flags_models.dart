@@ -50,8 +50,10 @@ class SwitchType with _$SwitchType {
 @freezed
 class ServiceTilesResponse with _$ServiceTilesResponse {
   @JsonSerializable(fieldRename: FieldRename.snake)
-  const factory ServiceTilesResponse(
-      {required String name, required bool isActive}) = _ServiceTilesResponse;
+  const factory ServiceTilesResponse({
+    required String name,
+    required bool isActive,
+  }) = _ServiceTilesResponse;
 
   factory ServiceTilesResponse.fromJson(Map<String, dynamic> json) =>
       _$ServiceTilesResponseFromJson(json);
@@ -81,6 +83,9 @@ enum MarketplaceServiceType {
 
   @JsonValue('moneybadger')
   moneybadger,
+
+  @JsonValue('dlcs')
+  dlcs,
 }
 
 extension on MarketplaceServiceType {
@@ -105,7 +110,8 @@ class MarketplaceServiceAvailability with _$MarketplaceServiceAvailability {
       _$MarketplaceServiceAvailabilityFromJson(json);
 
   static MarketplaceServiceAvailability? fromResponse(
-      ServiceTilesResponse response) {
+    ServiceTilesResponse response,
+  ) {
     final type = _marketplaceServiceTypeFromString(response.name);
     if (type == null) {
       debugPrint('Unknown action id: ${response.name}');

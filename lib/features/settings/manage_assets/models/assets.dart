@@ -229,7 +229,7 @@ class Asset with _$Asset {
         name: 'Lightning',
         id: AssetIds.lightning,
         ticker: 'BTC',
-        logoUrl: UiAssets.assetIcons.l2.path,
+        logoUrl: UiAssets.assetIcons.l2Svg_.path,
         isDefaultAsset: true,
         isLiquid: false,
         isLBTC: false,

@@ -32,7 +32,7 @@ class AssetIcon extends ConsumerWidget {
         localAsset = UiAssets.assetIcons.btc.path;
         break;
       case 'lightning':
-        localAsset = UiAssets.assetIcons.l2.path;
+        localAsset = UiAssets.assetIcons.l2Svg_.path;
         break;
       case 'LiquidBitcoin':
         localAsset = UiAssets.assetIcons.liquid.path;

@@ -13,6 +13,7 @@ import 'package:aqua/features/boltz/screens/boltz_swaps_screen.dart';
 import 'package:aqua/features/desktop/layout/layout.dart';
 import 'package:aqua/features/desktop/pages/pages.dart';
 import 'package:aqua/features/desktop/utils/utils.dart';
+import 'package:aqua/features/dlc/dlc.dart';
 import 'package:aqua/features/home/home.dart';
 import 'package:aqua/features/lending/pages/contract_details_screen.dart';
 import 'package:aqua/features/lending/pages/create_contract_screen.dart';
@@ -102,8 +103,9 @@ List<RouteBase> get routes {
 
   return [
     GoRoute(
-        path: LoggerScreen.routeName,
-        builder: (context, state) => const LoggerScreen()),
+      path: LoggerScreen.routeName,
+      builder: (context, state) => const LoggerScreen(),
+    ),
     GoRoute(
       path: AuthWrapper.routeName,
       builder: (context, state) => const AuthWrapper(),
@@ -122,9 +124,8 @@ List<RouteBase> get routes {
     ),
     GoRoute(
       path: EditWalletScreen.routeName,
-      builder: (context, state) => EditWalletScreen(
-        wallet: state.extra as StoredWallet?,
-      ),
+      builder: (context, state) =>
+          EditWalletScreen(wallet: state.extra as StoredWallet?),
     ),
     GoRoute(
       path: WebviewScreen.routeName,
@@ -134,6 +135,10 @@ List<RouteBase> get routes {
     GoRoute(
       path: OnRampScreen.routeName,
       builder: (context, state) => const OnRampScreen(),
+    ),
+    GoRoute(
+      path: DlcScreen.routeName,
+      builder: (context, state) => const DlcScreen(),
     ),
     GoRoute(
       path: SplashScreen.routeName,
@@ -162,22 +167,27 @@ List<RouteBase> get routes {
     GoRoute(
       path: WalletRecoveryPhraseScreen.routeName,
       builder: (context, state) => WalletRecoveryPhraseScreen(
-          arguments: state.extra as RecoveryPhraseScreenArguments),
+        arguments: state.extra as RecoveryPhraseScreenArguments,
+      ),
     ),
     GoRoute(
-        path: PinWarningScreen.routeName,
-        builder: (context, state) => const PinWarningScreen()),
+      path: PinWarningScreen.routeName,
+      builder: (context, state) => const PinWarningScreen(),
+    ),
     GoRoute(
-        path: SetupPinScreen.routeName,
-        builder: (context, state) => const SetupPinScreen()),
+      path: SetupPinScreen.routeName,
+      builder: (context, state) => const SetupPinScreen(),
+    ),
     GoRoute(
-        path: CheckPinScreen.routeName,
-        builder: (context, state) =>
-            CheckPinScreen(arguments: state.extra as CheckPinScreenArguments)),
+      path: CheckPinScreen.routeName,
+      builder: (context, state) =>
+          CheckPinScreen(arguments: state.extra as CheckPinScreenArguments),
+    ),
     GoRoute(
       path: WalletPhraseWarningScreen.routeName,
       builder: (context, state) => WalletPhraseWarningScreen(
-        arguments: (state.extra as RecoveryPhraseScreenArguments?) ??
+        arguments:
+            (state.extra as RecoveryPhraseScreenArguments?) ??
             const RecoveryPhraseScreenArguments(),
       ),
     ),
@@ -217,9 +227,8 @@ List<RouteBase> get routes {
     ),
     GoRoute(
       path: TextScannerScreen.routeName,
-      builder: (context, state) => TextScannerScreen(
-        arguments: state.extra as TextScannerArguments,
-      ),
+      builder: (context, state) =>
+          TextScannerScreen(arguments: state.extra as TextScannerArguments),
     ),
     GoRoute(
       path: ScanScreen.routeName,
@@ -256,9 +265,8 @@ List<RouteBase> get routes {
     ),
     GoRoute(
       path: PriceSourceScreen.routeName,
-      builder: (context, state) => PriceSourceScreen(
-        exchangeRate: state.extra as ExchangeRate,
-      ),
+      builder: (context, state) =>
+          PriceSourceScreen(exchangeRate: state.extra as ExchangeRate),
     ),
     GoRoute(
       path: ConversionCurrenciesSettingsScreen.routeName,
@@ -321,9 +329,8 @@ List<RouteBase> get routes {
     ),
     GoRoute(
       path: WalletSettingsScreen.routeName,
-      builder: (_, state) => WalletSettingsScreen(
-        walletId: state.extra as String,
-      ),
+      builder: (_, state) =>
+          WalletSettingsScreen(walletId: state.extra as String),
     ),
     GoRoute(
       path: PokerchipScannerScreen.routeName,
@@ -453,9 +460,8 @@ List<RouteBase> get routes {
     ),
     GoRoute(
       path: Jan3OtpVerificationScreen.routeName,
-      builder: (_, state) => Jan3OtpVerificationScreen(
-        email: state.extra as String,
-      ),
+      builder: (_, state) =>
+          Jan3OtpVerificationScreen(email: state.extra as String),
     ),
     GoRoute(
       path: DebitCardOnboardingScreen.routeName,
@@ -475,15 +481,13 @@ List<RouteBase> get routes {
     ),
     GoRoute(
       path: SamRockScreen.routeName,
-      builder: (context, state) => SamRockScreen(
-        samRockAppLink: state.extra as SamRockAppLink,
-      ),
+      builder: (context, state) =>
+          SamRockScreen(samRockAppLink: state.extra as SamRockAppLink),
     ),
     GoRoute(
       path: ReceiveAmountScreen.routeName,
-      builder: (context, state) => ReceiveAmountScreen(
-        args: state.extra as ReceiveAmountArguments,
-      ),
+      builder: (context, state) =>
+          ReceiveAmountScreen(args: state.extra as ReceiveAmountArguments),
     ),
     GoRoute(
       path: UnitCurrencySelectionScreen.routeName,
@@ -513,9 +517,8 @@ List<RouteBase> get routes {
     ),
     GoRoute(
       path: AssetNetworkSelectionScreen.routeName,
-      builder: (context, state) => AssetNetworkSelectionScreen(
-        filterAsset: state.extra as Asset?,
-      ),
+      builder: (context, state) =>
+          AssetNetworkSelectionScreen(filterAsset: state.extra as Asset?),
     ),
     GoRoute(
       path: ServiceErrorScreen.routeName,
