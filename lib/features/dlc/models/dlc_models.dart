@@ -234,24 +234,32 @@ class DlcOrder {
   final String? closingTxid;
   final String? refundTxid;
 
+  static const terminalDlcStatuses = {
+    'cet_broadcasted',
+    'refund_broadcasted',
+    'cet_closed',
+    'refund_closed',
+    'terminated',
+  };
+
   bool get isOpen => status == 'open';
   bool get needsTakerAccept =>
       status == 'pending_accept' || pendingMatchAccept;
-  bool get needsMakerSign =>
-      signRequired &&
-      isMaker &&
-      (dlcId?.isNotEmpty ?? false) &&
-      (dlcStatus == null ||
-          dlcStatus == 'accepted' ||
-          dlcStatus == 'offer_created');
+  bool get needsMakerSign {
+    if (!isMaker || dlcId == null || dlcId!.isEmpty) {
+      return false;
+    }
+    // After the taker accepts, the maker must sign even if sign_required is
+    // missing from a stale list-orders payload.
+    if (dlcStatus == 'accepted') {
+      return true;
+    }
+    return signRequired &&
+        (dlcStatus == null || dlcStatus == 'offer_created');
+  }
 
   bool get isLiveDlc =>
-      dlcStatus != null &&
-      !{
-        'cet_closed',
-        'refund_closed',
-        'terminated',
-      }.contains(dlcStatus);
+      dlcStatus != null && !terminalDlcStatuses.contains(dlcStatus);
 
   DlcOrder mergeSettlement(Map<String, dynamic> json) => DlcOrder(
         orderId: orderId,
@@ -348,6 +356,7 @@ class DlcSigningContext {
     required this.refundSighashHex,
     required this.fundingInputSighashesHex,
     required this.fundingInputOutpoints,
+    this.fundingInputAddresses = const [],
     this.offerObjectHex,
     this.acceptObjectHex,
   });
@@ -357,6 +366,7 @@ class DlcSigningContext {
   final String refundSighashHex;
   final List<String> fundingInputSighashesHex;
   final List<String> fundingInputOutpoints;
+  final List<String> fundingInputAddresses;
   final String? offerObjectHex;
   final String? acceptObjectHex;
 
@@ -381,6 +391,10 @@ class DlcSigningContext {
             (json['funding_input_outpoints'] as List<dynamic>? ?? [])
                 .map((item) => item.toString())
                 .toList(),
+        fundingInputAddresses:
+            (json['funding_input_addresses'] as List<dynamic>? ?? [])
+                .map((item) => item.toString())
+                .toList(),
         offerObjectHex: json['offer_object_hex'] as String?,
         acceptObjectHex: json['accept_object_hex'] as String?,
       );
@@ -394,6 +408,15 @@ class DlcFundingPubkey {
 
   final String pubkeyHex;
   final String derivationPath;
+}
+
+/// How per-input funding signatures are encoded for the coordinator API.
+enum DlcFundingSignatureFormat {
+  /// Legacy per-input compact `r ‖ s` (128 hex chars).
+  compact,
+
+  /// Coordinator-compatible: one hex entry — DLC `FundingSignatures` container.
+  witnessWire,
 }
 
 class DlcSignatureBundle {

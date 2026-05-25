@@ -3,9 +3,21 @@ import 'package:aqua/features/dlc/services/dlc_api_exception.dart';
 
 bool isDlcContextMismatch(DlcApiException error) {
   final message = error.message.toLowerCase();
+  final code = error.errorCode?.toLowerCase() ?? '';
+
+  if (code.contains('context_mismatch') ||
+      code.contains('stale_context') ||
+      code.contains('stale_accept_context')) {
+    return true;
+  }
+
   return message.contains('context_mismatch') ||
       message.contains('stale_context') ||
-      message.contains('stale context');
+      message.contains('stale context') ||
+      message.contains('stale_accept_context') ||
+      message.contains('fingerprint mismatch') ||
+      message.contains('signing context fingerprint') ||
+      message.contains('context fingerprint');
 }
 
 bool isDlcPartnerConfigError(DlcApiException error) {

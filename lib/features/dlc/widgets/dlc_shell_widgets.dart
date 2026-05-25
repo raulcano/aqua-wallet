@@ -17,7 +17,7 @@ class DlcTopNav extends StatelessWidget {
 
   static const _tabs = [
     (icon: Icons.dashboard_outlined, label: 'Overview'),
-    (icon: Icons.menu_book_outlined, label: 'Trade'),
+    (icon: Icons.candlestick_chart_outlined, label: 'Trade'),
     (icon: Icons.list_alt_outlined, label: 'My orders'),
     (icon: Icons.calculate_outlined, label: 'Simulate'),
   ];
@@ -135,34 +135,37 @@ class DlcMessageBanner extends StatelessWidget {
         isError ? scheme.errorContainer : scheme.primaryContainer;
     final foreground =
         isError ? scheme.onErrorContainer : scheme.onPrimaryContainer;
-    return Material(
-      color: background,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              isError ? Icons.error_outline : Icons.info_outline,
-              color: foreground,
-              size: 20,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                message,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: foreground),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Material(
+        color: background,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                isError ? Icons.error_outline : Icons.info_outline,
+                color: foreground,
+                size: 20,
               ),
-            ),
-            IconButton(
-              visualDensity: VisualDensity.compact,
-              icon: Icon(Icons.close, color: foreground, size: 18),
-              onPressed: onDismiss,
-            ),
-          ],
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  message,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: foreground),
+                ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: Icon(Icons.close, color: foreground, size: 18),
+                onPressed: onDismiss,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -300,5 +303,42 @@ class DlcColdPayAttribution extends ConsumerWidget {
   }
 }
 
-bool dlcShellOverlayVisible(DlcState state) =>
-    state.actionInProgress || state.isLoadingTradeData || state.isSimulating;
+/// Input decoration for DLC text fields and dropdowns on [Card] surfaces.
+InputDecoration dlcInputDecoration(
+  BuildContext context, {
+  String? labelText,
+  String? hintText,
+  String? helperText,
+  String? suffixText,
+}) {
+  final scheme = Theme.of(context).colorScheme;
+  final enabledBorder = OutlineInputBorder(
+    borderRadius: BorderRadius.circular(12),
+    borderSide: BorderSide(color: scheme.outlineVariant.withOpacity(0.55)),
+  );
+  final focusedBorder = OutlineInputBorder(
+    borderRadius: BorderRadius.circular(12),
+    borderSide: BorderSide(color: scheme.primary),
+  );
+
+  return InputDecoration(
+    labelText: labelText,
+    hintText: hintText,
+    helperText: helperText,
+    suffixText: suffixText,
+    isDense: true,
+    filled: true,
+    fillColor: scheme.surfaceContainerLow,
+    border: enabledBorder,
+    enabledBorder: enabledBorder,
+    focusedBorder: focusedBorder,
+  );
+}
+
+bool dlcShellOverlayVisible(
+  DlcState state, {
+  bool simulateLoading = false,
+}) =>
+    state.actionInProgress ||
+    state.isLoadingTradeData ||
+    simulateLoading;

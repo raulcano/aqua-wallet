@@ -1,5 +1,6 @@
 import 'package:aqua/config/config.dart';
 import 'package:aqua/features/dlc/config/dlc_backup_interceptor.dart';
+import 'package:aqua/features/dlc/config/dlc_coordinator_http.dart';
 import 'package:aqua/features/shared/shared.dart';
 import 'package:dio/dio.dart';
 
@@ -80,9 +81,9 @@ final dlcDioProvider = Provider<Dio>((ref) {
   final config = ref.watch(dlcConfigProvider);
   final baseOptions = BaseOptions(
     baseUrl: config.baseUrl,
-    connectTimeout: const Duration(seconds: 8),
-    receiveTimeout: const Duration(seconds: 8),
-    sendTimeout: const Duration(seconds: 8),
+    connectTimeout: DlcCoordinatorHttp.defaultConnectTimeout,
+    receiveTimeout: DlcCoordinatorHttp.defaultReceiveTimeout,
+    sendTimeout: DlcCoordinatorHttp.defaultSendTimeout,
     headers: const {'Content-Type': 'application/json'},
     // Avoid Uvicorn/httptools issues with back-to-back POSTs on keep-alive.
     persistentConnection: false,

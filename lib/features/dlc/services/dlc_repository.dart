@@ -5,6 +5,7 @@ import 'package:aqua/features/dlc/services/dlc_api_exception.dart';
 import 'package:aqua/features/dlc/services/dlc_api_service.dart';
 import 'package:aqua/features/dlc/services/dlc_auth_storage.dart';
 import 'package:aqua/features/dlc/services/dlc_idempotency_storage.dart';
+import 'package:aqua/features/dlc/services/dlc_isolate_signer.dart';
 import 'package:aqua/features/dlc/services/dlc_local_signer.dart';
 import 'package:aqua/features/dlc/services/dlc_negotiation_utils.dart';
 import 'package:aqua/features/dlc/services/dlc_spot_price_service.dart';
@@ -83,29 +84,36 @@ class DlcRepository {
     required String walletLabel,
     required String mnemonic,
   }) async {
-    final context = await _contextResolver.resolve(
-      walletId: walletOriginId,
-      walletLabel: walletLabel,
-      mnemonic: mnemonic,
-    );
+    final resolved = await Future.wait([
+      _contextResolver.resolve(
+        walletId: walletOriginId,
+        walletLabel: walletLabel,
+        mnemonic: mnemonic,
+      ),
+      _api.createNonce(),
+    ]);
+    final context = resolved[0] as DlcBitcoinWalletContext;
+    final nonce = resolved[1] as String;
 
     if (context.coordinatorXpub.isEmpty) {
       throw StateError('Could not read Bitcoin account xpub for registration');
     }
 
-    final nonce = await _api.createNonce();
-    final utxoProofs = _signer.buildUtxoProofs(
-      nonce: nonce,
-      mnemonic: mnemonic,
-      utxos: context.utxos,
-      accountUserPath: context.accountUserPath,
-    );
-
-    final signatureCandidates = _signer.signNonceProofCandidates(
-      nonce: nonce,
-      mnemonic: mnemonic,
-      accountUserPath: context.accountUserPath,
-    );
+    final signed = await Future.wait([
+      buildUtxoProofsInIsolate(
+        nonce: nonce,
+        mnemonic: mnemonic,
+        utxos: context.utxos,
+        accountUserPath: context.accountUserPath,
+      ),
+      signNonceProofCandidatesInIsolate(
+        nonce: nonce,
+        mnemonic: mnemonic,
+        accountUserPath: context.accountUserPath,
+      ),
+    ]);
+    final utxoProofs = signed[0] as List<DlcUtxoProof>;
+    final signatureCandidates = signed[1] as List<String>;
 
     DlcApiException? lastError;
     for (final signature in signatureCandidates) {
@@ -144,13 +152,17 @@ class DlcRepository {
     required DlcWalletAuth auth,
     required String mnemonic,
   }) async {
-    final context = await _contextResolver.resolve(
-      walletId: auth.walletOriginId,
-      walletLabel: auth.walletLabel,
-      mnemonic: mnemonic,
-    );
-    final nonce = await _api.createNonce();
-    final utxoProofs = _signer.buildUtxoProofs(
+    final resolved = await Future.wait([
+      _contextResolver.resolve(
+        walletId: auth.walletOriginId,
+        walletLabel: auth.walletLabel,
+        mnemonic: mnemonic,
+      ),
+      _api.createNonce(),
+    ]);
+    final context = resolved[0] as DlcBitcoinWalletContext;
+    final nonce = resolved[1] as String;
+    final utxoProofs = await buildUtxoProofsInIsolate(
       nonce: nonce,
       mnemonic: mnemonic,
       utxos: context.utxos,
@@ -249,11 +261,11 @@ class DlcRepository {
   }
 
   Future<DlcOptionPayoutSimulationResult> simulateOptionPayout({
-    required DlcWalletAuth auth,
+    DlcWalletAuth? auth,
     required DlcOptionPayoutSimulationRequest request,
   }) async {
     final json = await _api.simulateOptionPayout(
-      walletToken: auth.walletToken,
+      walletToken: auth?.walletToken,
       body: request.toJson(),
     );
     return DlcOptionPayoutSimulationResult.fromJson(json);
@@ -449,6 +461,7 @@ class DlcRepository {
     required String mnemonic,
   }) async {
     final orders = await listOrders(auth);
+    DlcApiException? lastError;
     for (final order in orders) {
       if (!orderNeedsNegotiation(order)) {
         continue;
@@ -472,8 +485,11 @@ class DlcRepository {
         if (e.statusCode == 404) {
           continue;
         }
-        rethrow;
+        lastError = e;
       }
+    }
+    if (lastError != null) {
+      throw lastError;
     }
   }
 
@@ -523,11 +539,12 @@ class DlcRepository {
       orderId: order.orderId,
       contextFingerprint: acceptContext.contextFingerprint,
     );
-    final signatures = _signer.signDlcContext(
+    final signatures = await signDlcContextInIsolate(
       context: acceptContext,
       mnemonic: mnemonic,
       accountUserPath: context.accountUserPath,
       walletUtxos: context.utxos,
+      fundingSignatureFormat: DlcFundingSignatureFormat.witnessWire,
     );
     try {
       await _api.submitAcceptMatch(
@@ -577,6 +594,10 @@ class DlcRepository {
     }
   }
 
+  /// Fetches fresh sign-context, signs locally, then submits `/sign`.
+  ///
+  /// On context fingerprint mismatch (409), the caller retries once with a new
+  /// sign-context fetch and regenerated signatures.
   Future<void> _submitMakerSignOnce({
     required DlcWalletAuth auth,
     required String mnemonic,
@@ -588,6 +609,7 @@ class DlcRepository {
       walletLabel: auth.walletLabel,
       mnemonic: mnemonic,
     );
+    await syncWalletUtxos(auth: auth, mnemonic: mnemonic);
     final signContext = await _api.getSignContext(
       walletToken: auth.walletToken,
       dlcId: dlcId,
@@ -597,14 +619,15 @@ class DlcRepository {
       dlcId: dlcId,
       contextFingerprint: fingerprint,
     );
-    final signatures = _signer.signDlcContext(
+    final signatures = await signDlcContextInIsolate(
       context: signContext,
       mnemonic: mnemonic,
       accountUserPath: context.accountUserPath,
       walletUtxos: context.utxos,
+      fundingSignatureFormat: DlcFundingSignatureFormat.witnessWire,
     );
     try {
-      await _api.submitSign(
+      final signResponse = await _api.submitSign(
         walletToken: auth.walletToken,
         dlcId: dlcId,
         idempotencyKey: idempotencyKey,
@@ -612,6 +635,21 @@ class DlcRepository {
         refundSignatureHex: signatures.refundSignatureHex,
         fundingSignaturesHex: signatures.fundingSignaturesHex,
       );
+      final fundingBroadcastError =
+          signResponse['funding_broadcast_error'] as String?;
+      if (fundingBroadcastError != null && fundingBroadcastError.isNotEmpty) {
+        throw DlcApiException(
+          message: 'Funding transaction broadcast failed: $fundingBroadcastError',
+        );
+      }
+      final fundingTxid = signResponse['funding_txid'] as String?;
+      if (fundingTxid == null || fundingTxid.isEmpty) {
+        throw DlcApiException(
+          message:
+              'Sign accepted but funding transaction was not broadcast. '
+              'Check funding signatures and wallet UTXO keys.',
+        );
+      }
     } on DlcApiException catch (e) {
       if (isDlcContextMismatch(e)) {
         await _idempotencyStorage.rotateSignKey(
@@ -679,6 +717,7 @@ Map<String, dynamic> acceptContextToSnapshot(DlcSigningContext context) => {
       'refund_sighash_hex': context.refundSighashHex,
       'funding_input_sighashes_hex': context.fundingInputSighashesHex,
       'funding_input_outpoints': context.fundingInputOutpoints,
+      'funding_input_addresses': context.fundingInputAddresses,
       if (context.offerObjectHex != null)
         'offer_object_hex': context.offerObjectHex,
     };

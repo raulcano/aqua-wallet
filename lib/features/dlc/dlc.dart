@@ -6,6 +6,7 @@ export 'crypto/ecdsa_adaptor_signature.dart';
 export 'models/dlc_models.dart';
 export 'models/dlc_trade_models.dart';
 export 'services/dlc_spot_price_service.dart';
+export 'utils/dlc_option_payout_simulation.dart';
 export 'utils/dlc_instrument_utils.dart';
 export 'pages/dlc_orders_panel.dart';
 export 'pages/dlc_overview_panel.dart';

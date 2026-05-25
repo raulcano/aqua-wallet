@@ -3,7 +3,11 @@ import 'dart:typed_data';
 
 import 'package:aqua/data/models/gdk_models.dart';
 import 'package:aqua/features/dlc/crypto/coordinator_cet_signer.dart';
+import 'package:aqua/features/dlc/crypto/dlc_ecdsa_der.dart';
+import 'package:aqua/features/dlc/crypto/dlc_funding_signature_wire.dart';
+import 'package:aqua/features/dlc/crypto/ecdsa_adaptor_signature.dart';
 import 'package:aqua/features/dlc/models/dlc_models.dart';
+import 'package:aqua/features/dlc/services/dlc_funding_key_resolve.dart';
 import 'package:aqua/features/wallet/utils/derivation_path_utils.dart';
 import 'package:bip32/bip32.dart' as bip32;
 import 'package:bip39/bip39.dart' as bip39;
@@ -58,6 +62,9 @@ class DlcLocalSigner {
     }
     return hex.encode(privateKey);
   }
+
+  String derivePublicKeyHexAtPath(String mnemonic, String path) =>
+      hex.encode(_masterNode(mnemonic).derivePath(path).publicKey);
 
   List<String> signNonceProofCandidates({
     required String nonce,
@@ -136,11 +143,11 @@ class DlcLocalSigner {
     required String mnemonic,
     required List<int> accountUserPath,
     required List<GdkUnspentOutputs> walletUtxos,
+    DlcFundingSignatureFormat fundingSignatureFormat =
+        DlcFundingSignatureFormat.witnessWire,
   }) {
-    final fundingPrivateKeyHex = derivePrivateKeyHexAtPath(
-      mnemonic,
-      fundingDerivationPath(accountUserPath),
-    );
+    final fundingPath = fundingDerivationPath(accountUserPath);
+    final fundingPrivateKeyHex = derivePrivateKeyHexAtPath(mnemonic, fundingPath);
 
     final fundingPrivateKey = Uint8List.fromList(hex.decode(fundingPrivateKeyHex));
     final cetAdaptorSignaturesHex = _cetSigner.signJobs(
@@ -153,21 +160,44 @@ class DlcLocalSigner {
       privateKeyHex: fundingPrivateKeyHex,
     );
 
+    final accountPath = accountDerivationPath(accountUserPath);
+    final fundingMaterials = resolveFundingInputSigningMaterials(
+      mnemonic: mnemonic,
+      accountDerivationPath: accountPath,
+      walletUtxos: walletUtxos,
+      fundingInputSighashesHex: context.fundingInputSighashesHex,
+      fundingInputAddresses: context.fundingInputAddresses,
+      fundingInputOutpoints: context.fundingInputOutpoints,
+      derivePrivateKeyHex: derivePrivateKeyHexAtPath,
+      derivePublicKeyHex: derivePublicKeyHexAtPath,
+    );
+
     final fundingSignaturesHex = <String>[];
-    for (var i = 0; i < context.fundingInputSighashesHex.length; i++) {
-      final sighash = context.fundingInputSighashesHex[i];
-      final outpoint = i < context.fundingInputOutpoints.length
-          ? context.fundingInputOutpoints[i]
-          : null;
-      final privateKeyHex = _resolveFundingInputPrivateKeyHex(
-        mnemonic: mnemonic,
-        walletUtxos: walletUtxos,
-        outpoint: outpoint,
-        fallbackPrivateKeyHex: fundingPrivateKeyHex,
-      );
-      fundingSignaturesHex.add(
-        signSighashHex(sighashHex: sighash, privateKeyHex: privateKeyHex),
-      );
+    if (fundingSignatureFormat == DlcFundingSignatureFormat.witnessWire) {
+      final witnessStacks = <Uint8List>[];
+      for (var i = 0; i < fundingMaterials.length; i++) {
+        witnessStacks.add(
+          _signFundingInputWitnessStack(
+            sighashHex: context.fundingInputSighashesHex[i],
+            privateKeyHex: fundingMaterials[i].privateKeyHex,
+            publicKeyHex: fundingMaterials[i].publicKeyHex,
+          ),
+        );
+      }
+      if (witnessStacks.isNotEmpty) {
+        fundingSignaturesHex.add(
+          hex.encode(encodeFundingSignaturesContainer(witnessStacks)),
+        );
+      }
+    } else {
+      for (var i = 0; i < fundingMaterials.length; i++) {
+        fundingSignaturesHex.add(
+          signSighashHex(
+            sighashHex: context.fundingInputSighashesHex[i],
+            privateKeyHex: fundingMaterials[i].privateKeyHex,
+          ),
+        );
+      }
     }
 
     return DlcSignatureBundle(
@@ -177,39 +207,49 @@ class DlcLocalSigner {
     );
   }
 
-  String _resolveFundingInputPrivateKeyHex({
-    required String mnemonic,
-    required List<GdkUnspentOutputs> walletUtxos,
-    required String? outpoint,
-    required String fallbackPrivateKeyHex,
+  Uint8List _signFundingInputWitnessStack({
+    required String sighashHex,
+    required String privateKeyHex,
+    required String publicKeyHex,
   }) {
-    if (outpoint == null) {
-      return fallbackPrivateKeyHex;
+    final digest = Uint8List.fromList(hex.decode(sighashHex));
+    final compactSignature = Uint8List.fromList(
+      hex.decode(_signDigestCompactHex(digest: digest, privateKeyHex: privateKeyHex)),
+    );
+    final derSignature = Uint8List.fromList(
+      hex.decode(
+        compactSecp256k1SignatureToDerHex(
+          compactSignature,
+          includeHashType: true,
+        ),
+      ),
+    );
+    final publicKey = Uint8List.fromList(
+      hex.decode(_normalizeCompressedPubkeyHex(publicKeyHex)),
+    );
+    return encodeP2wpkhWitnessStack(
+      derSignatureWithSighash: derSignature,
+      compressedPublicKey: publicKey,
+    );
+  }
+
+  String _normalizeCompressedPubkeyHex(String publicKeyHex) {
+    final normalized = publicKeyHex.toLowerCase().replaceFirst(RegExp('^0x'), '');
+    if (normalized.length != 66) {
+      throw StateError('Expected compressed public key (66 hex chars)');
     }
-    final parts = outpoint.split(':');
-    if (parts.length != 2) {
-      return fallbackPrivateKeyHex;
-    }
-    final txid = parts[0];
-    final vout = int.tryParse(parts[1]);
-    if (vout == null) {
-      return fallbackPrivateKeyHex;
-    }
-    GdkUnspentOutputs? match;
-    for (final utxo in walletUtxos) {
-      if (utxo.txhash == txid && utxo.ptIdx == vout) {
-        match = utxo;
-        break;
-      }
-    }
-    final userPath = match?.userPath;
-    if (userPath == null) {
-      return fallbackPrivateKeyHex;
-    }
-    return derivePrivateKeyHexAtPath(mnemonic, userPathToBip32Path(userPath));
+    return normalized;
   }
 
   String signSighashHex({
+    required String sighashHex,
+    required String privateKeyHex,
+  }) {
+    final digest = Uint8List.fromList(hex.decode(sighashHex));
+    return _signDigestCompactHex(digest: digest, privateKeyHex: privateKeyHex);
+  }
+
+  String signSighashDerHex({
     required String sighashHex,
     required String privateKeyHex,
   }) {
@@ -221,6 +261,25 @@ class DlcLocalSigner {
     required Uint8List digest,
     required String privateKeyHex,
   }) {
+    final signature = _signDigest(digest: digest, privateKeyHex: privateKeyHex);
+    return _derEncode(signature);
+  }
+
+  /// DLC coordinator messages expect compact `r ‖ s` (64 bytes / 128 hex).
+  String _signDigestCompactHex({
+    required Uint8List digest,
+    required String privateKeyHex,
+  }) {
+    final signature = _signDigest(digest: digest, privateKeyHex: privateKeyHex);
+    return hex.encode(
+      EcdsaSignature(r: signature.r, s: signature.s).serialize(),
+    );
+  }
+
+  ECSignature _signDigest({
+    required Uint8List digest,
+    required String privateKeyHex,
+  }) {
     final params = ECDomainParameters('secp256k1');
     final privateKey = ECPrivateKey(
       BigInt.parse(privateKeyHex, radix: 16),
@@ -228,8 +287,7 @@ class DlcLocalSigner {
     );
     final signer = ECDSASigner(null, HMac(SHA256Digest(), 64));
     signer.init(true, PrivateKeyParameter<ECPrivateKey>(privateKey));
-    final signature = signer.generateSignature(digest) as ECSignature;
-    return _derEncode(signature);
+    return signer.generateSignature(digest) as ECSignature;
   }
 
   String _derEncode(ECSignature signature) {

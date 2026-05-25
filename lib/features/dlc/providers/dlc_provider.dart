@@ -35,13 +35,13 @@ class DlcState {
     this.btcUsdSpot,
     this.strikeOrderbooks = const [],
     this.isLoadingTradeData = false,
-    this.payoutSimulation,
-    this.isSimulating = false,
-    this.simulationRole = 'maker',
     this.createSide = 'buy',
     this.walletPnlSats,
     this.createOrderMatchIntent = false,
     this.processingOrder = false,
+    this.negotiationInProgress = false,
+    this.walletSyncInProgress = false,
+    this.activationInProgress = false,
   });
 
   final String? activeWalletId;
@@ -65,12 +65,12 @@ class DlcState {
   final num? btcUsdSpot;
   final List<DlcStrikeOrderbookSnapshot> strikeOrderbooks;
   final bool isLoadingTradeData;
-  final DlcOptionPayoutSimulationResult? payoutSimulation;
-  final bool isSimulating;
-  final String simulationRole;
   final num? walletPnlSats;
   final bool createOrderMatchIntent;
   final bool processingOrder;
+  final bool negotiationInProgress;
+  final bool walletSyncInProgress;
+  final bool activationInProgress;
 
   bool get isRegistered =>
       auth != null && auth!.walletToken.isNotEmpty && !auth!.isExpired;
@@ -110,15 +110,14 @@ class DlcState {
     num? btcUsdSpot,
     List<DlcStrikeOrderbookSnapshot>? strikeOrderbooks,
     bool? isLoadingTradeData,
-    DlcOptionPayoutSimulationResult? payoutSimulation,
-    bool? isSimulating,
-    String? simulationRole,
     num? walletPnlSats,
     bool? createOrderMatchIntent,
     bool? processingOrder,
+    bool? negotiationInProgress,
+    bool? walletSyncInProgress,
+    bool? activationInProgress,
     bool clearError = false,
     bool clearInfo = false,
-    bool clearPayoutSimulation = false,
     bool clearWalletPnl = false,
     bool clearCreateOrderMatchIntent = false,
   }) {
@@ -145,16 +144,17 @@ class DlcState {
       btcUsdSpot: btcUsdSpot ?? this.btcUsdSpot,
       strikeOrderbooks: strikeOrderbooks ?? this.strikeOrderbooks,
       isLoadingTradeData: isLoadingTradeData ?? this.isLoadingTradeData,
-      payoutSimulation: clearPayoutSimulation
-          ? null
-          : (payoutSimulation ?? this.payoutSimulation),
-      isSimulating: isSimulating ?? this.isSimulating,
-      simulationRole: simulationRole ?? this.simulationRole,
       walletPnlSats: clearWalletPnl ? null : (walletPnlSats ?? this.walletPnlSats),
       createOrderMatchIntent: clearCreateOrderMatchIntent
           ? false
           : (createOrderMatchIntent ?? this.createOrderMatchIntent),
       processingOrder: processingOrder ?? this.processingOrder,
+      negotiationInProgress:
+          negotiationInProgress ?? this.negotiationInProgress,
+      walletSyncInProgress:
+          walletSyncInProgress ?? this.walletSyncInProgress,
+      activationInProgress:
+          activationInProgress ?? this.activationInProgress,
     );
   }
 
@@ -193,23 +193,29 @@ class DlcNotifier extends StateNotifier<DlcState> {
     }, fireImmediately: true);
   }
 
+  static const _negotiationPollInterval = Duration(seconds: 15);
+
   final Ref _ref;
   int _sessionGeneration = 0;
-  Timer? _pollTimer;
+  int _negotiationGeneration = 0;
+  int _walletSyncGeneration = 0;
+  Timer? _negotiationPollTimer;
+  bool _negotiationRunning = false;
+  bool _walletSyncRunning = false;
 
   DlcRepository get _repository => _ref.read(dlcRepositoryProvider);
 
   @override
   void dispose() {
-    _pollTimer?.cancel();
+    _stopBackgroundTasks();
     super.dispose();
   }
 
   Future<void> _onActiveWalletChanged(StoredWallet? wallet) async {
-    _pollTimer?.cancel();
     final generation = ++_sessionGeneration;
 
     if (wallet == null) {
+      _stopBackgroundTasks();
       state = const DlcState();
       return;
     }
@@ -221,13 +227,9 @@ class DlcNotifier extends StateNotifier<DlcState> {
     );
 
     try {
-      await _ref.read(subaccountsProvider.notifier).loadSubaccounts();
-      if (generation != _sessionGeneration) return;
-
       await _reloadWalletData(wallet);
       if (generation != _sessionGeneration) return;
-
-      _configurePolling(generation);
+      _scheduleWalletSyncIfRegistered();
     } catch (e) {
       if (generation != _sessionGeneration) return;
       state = state.copyWith(
@@ -237,18 +239,7 @@ class DlcNotifier extends StateNotifier<DlcState> {
     }
   }
 
-  void _configurePolling(int generation) {
-    _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-      if (generation != _sessionGeneration || !state.isRegistered) {
-        return;
-      }
-      unawaited(_backgroundRefresh(showProcessing: false));
-    });
-  }
-
   Future<void> _reloadWalletData(StoredWallet wallet) async {
-    final mnemonic = await _loadMnemonic(wallet.id);
     final readiness = await _repository.getSystemReadiness();
     final networkHint = _repository.networkMismatchHint(readiness);
     final config = _ref.read(dlcConfigProvider);
@@ -284,20 +275,8 @@ class DlcNotifier extends StateNotifier<DlcState> {
 
     if (auth != null && !auth.isExpired) {
       try {
-        balances = await _repository.syncWalletUtxos(
-          auth: auth,
-          mnemonic: mnemonic,
-        );
-        orders = await _repository.listOrders(
-          auth,
-          enrichSettlement: true,
-        );
+        orders = await _repository.listOrders(auth);
         instruments = await _repository.listInstruments(auth.walletToken);
-        await _repository.runNegotiationPass(auth: auth, mnemonic: mnemonic);
-        orders = await _repository.listOrders(
-          auth,
-          enrichSettlement: true,
-        );
       } on DlcApiException catch (e) {
         if (e.statusCode == 401 || e.statusCode == 403) {
           await _repository.clearAuth(wallet.id);
@@ -311,18 +290,8 @@ class DlcNotifier extends StateNotifier<DlcState> {
       auth = null;
     }
 
-    instruments = await _repository.listInstruments(auth?.walletToken);
-
-    num? walletPnl;
-    if (auth != null && !auth.isExpired) {
-      final spot = state.btcUsdSpot ?? await _repository.fetchBtcUsdSpotPrice();
-      if (spot != null && orders.isNotEmpty) {
-        walletPnl = await _repository.estimateWalletPnlSats(
-          auth: auth,
-          orders: orders,
-          outcomePrice: spot,
-        );
-      }
+    if (auth == null) {
+      instruments = await _repository.listInstruments(null);
     }
 
     final tradeDefaults = _initialTradeUi(instruments);
@@ -343,8 +312,9 @@ class DlcNotifier extends StateNotifier<DlcState> {
       selectedStrike: tradeDefaults.selectedStrike,
       suggestedStrikes: tradeDefaults.suggestedStrikes,
       btcUsdSpot: tradeDefaults.btcUsdSpot,
-      walletPnlSats: walletPnl,
     );
+
+    _syncNegotiationScheduling();
 
     if (auth != null &&
         state.selectedTabIndex == 1 &&
@@ -364,6 +334,8 @@ class DlcNotifier extends StateNotifier<DlcState> {
     state = state.copyWith(selectedTabIndex: index);
     if (index == 1) {
       unawaited(refreshTradeData());
+    } else if (index == 2) {
+      unawaited(refreshOrdersTab());
     }
   }
 
@@ -393,12 +365,11 @@ class DlcNotifier extends StateNotifier<DlcState> {
     if (wallet == null) {
       return;
     }
-    state = state.copyWith(isLoading: true, clearError: true);
     try {
       await _reloadWalletData(wallet);
+      _scheduleWalletSyncIfRegistered();
     } catch (e) {
       state = state.copyWith(
-        isLoading: false,
         errorMessage: readDlcApiErrorMessage(e),
       );
     }
@@ -406,33 +377,182 @@ class DlcNotifier extends StateNotifier<DlcState> {
 
   Future<void> refreshOrdersTab() async {
     final auth = state.auth;
-    final walletId = state.activeWalletId;
-    if (auth == null || walletId == null) {
+    if (auth == null) {
       return;
     }
-    state = state.copyWith(isLoading: true, clearError: true);
     try {
-      final mnemonic = await _loadMnemonic(walletId);
-      await _repository.runNegotiationPass(auth: auth, mnemonic: mnemonic);
       final orders = await _repository.listOrders(
         auth,
         enrichSettlement: true,
       );
+      state = state.copyWith(
+        orders: orders,
+        clearError: true,
+      );
+      _syncNegotiationScheduling();
+    } catch (e) {
+      state = state.copyWith(
+        errorMessage: readDlcApiErrorMessage(e),
+      );
+    }
+  }
+
+  void _stopBackgroundTasks() {
+    _stopNegotiationPolling();
+    _walletSyncGeneration++;
+    _walletSyncRunning = false;
+  }
+
+  void _scheduleWalletSyncIfRegistered() {
+    if (state.isRegistered && state.activeWalletId != null) {
+      unawaited(_runWalletSyncInBackground());
+    }
+  }
+
+  Future<void> _runWalletSyncInBackground() async {
+    if (_walletSyncRunning) {
+      return;
+    }
+    final auth = state.auth;
+    final walletId = state.activeWalletId;
+    if (auth == null || walletId == null) {
+      return;
+    }
+
+    _walletSyncRunning = true;
+    final generation = ++_walletSyncGeneration;
+    state = state.copyWith(walletSyncInProgress: true, clearError: true);
+
+    try {
+      final mnemonic = await _loadMnemonic(walletId);
+      if (generation != _walletSyncGeneration) {
+        return;
+      }
       final balances = await _repository.syncWalletUtxos(
         auth: auth,
         mnemonic: mnemonic,
       );
+      if (generation != _walletSyncGeneration) {
+        return;
+      }
+      final orders = await _repository.listOrders(
+        auth,
+        enrichSettlement: true,
+      );
+      if (generation != _walletSyncGeneration) {
+        return;
+      }
+      num? walletPnl;
+      final spot = state.btcUsdSpot ?? await _repository.fetchBtcUsdSpotPrice();
+      if (spot != null && orders.isNotEmpty) {
+        walletPnl = await _repository.estimateWalletPnlSats(
+          auth: auth,
+          orders: orders,
+          outcomePrice: spot,
+        );
+      }
+      if (generation != _walletSyncGeneration) {
+        return;
+      }
       state = state.copyWith(
-        isLoading: false,
-        orders: orders,
         balances: balances,
+        orders: orders,
+        walletPnlSats: walletPnl,
+        walletSyncInProgress: false,
         clearError: true,
       );
+      _syncNegotiationScheduling();
     } catch (e) {
+      if (generation != _walletSyncGeneration) {
+        return;
+      }
       state = state.copyWith(
-        isLoading: false,
+        walletSyncInProgress: false,
         errorMessage: readDlcApiErrorMessage(e),
       );
+    } finally {
+      _walletSyncRunning = false;
+    }
+  }
+
+  void _stopNegotiationPolling() {
+    _negotiationGeneration++;
+    _negotiationPollTimer?.cancel();
+    _negotiationPollTimer = null;
+    _negotiationRunning = false;
+  }
+
+  void _syncNegotiationScheduling() {
+    final shouldPoll =
+        state.isRegistered && state.orders.any(orderNeedsNegotiation);
+    if (!shouldPoll) {
+      _negotiationPollTimer?.cancel();
+      _negotiationPollTimer = null;
+      if (state.negotiationInProgress) {
+        state = state.copyWith(negotiationInProgress: false);
+      }
+      return;
+    }
+    _negotiationPollTimer ??= Timer.periodic(
+      _negotiationPollInterval,
+      (_) => unawaited(_runNegotiationInBackground()),
+    );
+    if (!_negotiationRunning) {
+      unawaited(_runNegotiationInBackground());
+    }
+  }
+
+  Future<void> _runNegotiationInBackground() async {
+    if (_negotiationRunning) {
+      return;
+    }
+    final auth = state.auth;
+    final walletId = state.activeWalletId;
+    if (auth == null || walletId == null) {
+      return;
+    }
+    if (!state.orders.any(orderNeedsNegotiation)) {
+      _syncNegotiationScheduling();
+      return;
+    }
+
+    _negotiationRunning = true;
+    final generation = ++_negotiationGeneration;
+    state = state.copyWith(negotiationInProgress: true);
+
+    try {
+      final mnemonic = await _loadMnemonic(walletId);
+      if (generation != _negotiationGeneration) {
+        return;
+      }
+      await _repository.runNegotiationPass(auth: auth, mnemonic: mnemonic);
+      if (generation != _negotiationGeneration) {
+        return;
+      }
+      final orders = await _repository.listOrders(
+        auth,
+        enrichSettlement: true,
+      );
+      if (generation != _negotiationGeneration) {
+        return;
+      }
+      state = state.copyWith(
+        orders: orders,
+        clearError: true,
+        negotiationInProgress: false,
+      );
+      _syncNegotiationScheduling();
+    } catch (e) {
+      if (generation != _negotiationGeneration) {
+        return;
+      }
+      state = state.copyWith(
+        negotiationInProgress: false,
+        errorMessage: readDlcApiErrorMessage(e),
+      );
+      _syncNegotiationScheduling();
+    } finally {
+      _negotiationRunning = false;
     }
   }
 
@@ -446,7 +566,6 @@ class DlcNotifier extends StateNotifier<DlcState> {
       selectedStrike: strike,
       createSide: side.toLowerCase(),
       createOrderMatchIntent: true,
-      clearPayoutSimulation: true,
     );
   }
 
@@ -475,7 +594,6 @@ class DlcNotifier extends StateNotifier<DlcState> {
       templateInstrumentId: template?.instrumentId,
       selectedStrike: null,
       strikeOrderbooks: const [],
-      clearPayoutSimulation: true,
     );
     if (template != null) {
       unawaited(refreshTradeData());
@@ -487,7 +605,6 @@ class DlcNotifier extends StateNotifier<DlcState> {
       templateInstrumentId: templateInstrumentId,
       selectedStrike: null,
       strikeOrderbooks: const [],
-      clearPayoutSimulation: true,
     );
     if (templateInstrumentId != null) {
       unawaited(refreshTradeData());
@@ -497,7 +614,6 @@ class DlcNotifier extends StateNotifier<DlcState> {
   void setSelectedStrike(num? strike) {
     state = state.copyWith(
       selectedStrike: strike,
-      clearPayoutSimulation: true,
     );
     if (strike == null ||
         !state.isRegistered ||
@@ -510,10 +626,6 @@ class DlcNotifier extends StateNotifier<DlcState> {
     if (!alreadyLoaded) {
       unawaited(_refreshOrderbooksOnly());
     }
-  }
-
-  void setSimulationRole(String role) {
-    state = state.copyWith(simulationRole: role);
   }
 
   Future<void> refreshTradeData() async {
@@ -590,54 +702,6 @@ class DlcNotifier extends StateNotifier<DlcState> {
     }
   }
 
-  Future<void> runPayoutSimulation({
-    required String side,
-    required String role,
-    required String optionRight,
-    required num quantity,
-    required num strike,
-    required num premiumPerContractSats,
-    required num outcomePrice,
-    num networkFeeSats = 0,
-  }) async {
-    final auth = state.auth;
-    if (auth == null) {
-      state = state.copyWith(
-        errorMessage:
-            'Activate your wallet on Overview to run coordinator simulation.',
-      );
-      return;
-    }
-
-    state = state.copyWith(isSimulating: true, clearError: true);
-    try {
-      final result = await _repository.simulateOptionPayout(
-        auth: auth,
-        request: DlcOptionPayoutSimulationRequest(
-          side: side,
-          role: role,
-          optionRight: optionRight.toUpperCase(),
-          numContracts: quantity,
-          strike: strike,
-          premiumPerContractSats: premiumPerContractSats,
-          outcomePrice: outcomePrice,
-          networkFeeSats: networkFeeSats,
-          premiumPaidUpfront: true,
-        ),
-      );
-      state = state.copyWith(
-        isSimulating: false,
-        payoutSimulation: result,
-        infoMessage: 'Payout simulation updated',
-      );
-    } catch (e) {
-      state = state.copyWith(
-        isSimulating: false,
-        errorMessage: readDlcApiErrorMessage(e),
-      );
-    }
-  }
-
   Future<String> _loadMnemonic(String walletId) async {
     final (mnemonic, err) = await _ref
         .read(secureStorageProvider)
@@ -654,7 +718,7 @@ class DlcNotifier extends StateNotifier<DlcState> {
     if (walletId == null || walletName == null) {
       return;
     }
-    state = state.copyWith(actionInProgress: true, clearError: true);
+    state = state.copyWith(activationInProgress: true, clearError: true);
     try {
       final mnemonic = await _loadMnemonic(walletId);
       final auth = await _repository.registerWallet(
@@ -662,67 +726,49 @@ class DlcNotifier extends StateNotifier<DlcState> {
         walletLabel: walletName,
         mnemonic: mnemonic,
       );
-      final balances = await _repository.syncWalletUtxos(
-        auth: auth,
-        mnemonic: mnemonic,
-      );
-      final instruments =
-          await _repository.listInstruments(auth.walletToken);
-      final orders = await _repository.listOrders(auth);
       state = state.copyWith(
-        actionInProgress: false,
+        activationInProgress: false,
         auth: auth,
-        balances: balances,
-        instruments: instruments,
-        orders: orders,
         clearInfo: true,
         infoMessage:
-            'Wallet activated. Coordinator balances and UTXOs are syncing.',
+            'Wallet activated. Loading market data and syncing balances…',
       );
-      unawaited(refreshTradeData());
+      unawaited(_completeActivationInBackground(auth));
     } catch (e) {
       state = state.copyWith(
-        actionInProgress: false,
+        activationInProgress: false,
         errorMessage: readDlcApiErrorMessage(e),
       );
     }
   }
 
-  Future<void> refreshAll() => refreshCurrentTab();
-
-  Future<void> _backgroundRefresh({required bool showProcessing}) async {
-    final auth = state.auth;
-    final walletId = state.activeWalletId;
-    if (auth == null || walletId == null) return;
-    if (showProcessing) {
-      state = state.copyWith(isLoading: true, clearError: true);
-    }
+  Future<void> _completeActivationInBackground(DlcWalletAuth auth) async {
     try {
-      final mnemonic = await _loadMnemonic(walletId);
-      await _repository.runNegotiationPass(auth: auth, mnemonic: mnemonic);
-      final orders = await _repository.listOrders(
-        auth,
-        enrichSettlement: true,
-      );
-      final balances = await _repository.syncWalletUtxos(
-        auth: auth,
-        mnemonic: mnemonic,
-      );
+      final loaded = await Future.wait([
+        _repository.listInstruments(auth.walletToken),
+        _repository.listOrders(auth),
+      ]);
+      final instruments = loaded[0] as List<DlcInstrument>;
+      final orders = loaded[1] as List<DlcOrder>;
+      final tradeDefaults = _initialTradeUi(instruments);
       state = state.copyWith(
-        isLoading: false,
+        instruments: instruments,
         orders: orders,
-        balances: balances,
-        clearError: true,
+        templateInstrumentId: tradeDefaults.templateInstrumentId,
+        selectedStrike: tradeDefaults.selectedStrike,
+        suggestedStrikes: tradeDefaults.suggestedStrikes,
       );
-    } catch (e) {
-      if (showProcessing) {
-        state = state.copyWith(
-          isLoading: false,
-          errorMessage: readDlcApiErrorMessage(e),
-        );
+      _scheduleWalletSyncIfRegistered();
+      if (state.selectedTabIndex == 1 &&
+          tradeDefaults.templateInstrumentId != null) {
+        unawaited(refreshTradeData());
       }
+    } catch (e) {
+      state = state.copyWith(errorMessage: readDlcApiErrorMessage(e));
     }
   }
+
+  Future<void> refreshAll() => refreshCurrentTab();
 
   Future<void> createOrder({required num quantity}) async {
     final auth = state.auth;
@@ -747,8 +793,9 @@ class DlcNotifier extends StateNotifier<DlcState> {
       orderId: pendingId,
       instrumentId: resolvedId,
       side: side,
-      status: 'open',
+      status: matchIntent ? 'pending_accept' : 'open',
       quantity: quantity,
+      pendingMatchAccept: matchIntent,
     );
 
     var books = state.strikeOrderbooks;
@@ -804,7 +851,30 @@ class DlcNotifier extends StateNotifier<DlcState> {
         quantity: quantity,
         strike: dlcInstrumentHasStrikePlaceholder(template) ? strike : null,
       );
-      await _repository.runNegotiationPass(auth: auth, mnemonic: mnemonic);
+      final pendingOrder = state.orders.firstWhere(
+        (order) => order.orderId == pendingOrderId,
+        orElse: () => DlcOrder(
+          orderId: pendingOrderId,
+          instrumentId: template,
+          side: side,
+          status: 'open',
+          quantity: quantity,
+        ),
+      );
+      final matchedOnCreate = createResponseIndicatesMatch(response) ||
+          pendingOrder.status == 'pending_accept';
+      if (matchedOnCreate) {
+        state = state.copyWith(
+          orders: [
+            orderFromCreateResponse(
+              response: response,
+              pendingOrder: pendingOrder,
+            ),
+            ...state.orders.where((order) => order.orderId != pendingOrderId),
+          ],
+        );
+      }
+      _syncNegotiationScheduling();
       final orders = await _repository.listOrders(
         auth,
         enrichSettlement: true,
@@ -814,7 +884,6 @@ class DlcNotifier extends StateNotifier<DlcState> {
         infoMessage:
             'Order ${response.orderId} created (${response.status}). Signing continues in the background.',
       );
-      unawaited(_backgroundRefresh(showProcessing: false));
     } catch (e) {
       final message = e is DlcApiException && isDlcPartnerConfigError(e)
           ? 'DLC partner token is not accepted by the coordinator. Check .env.'
@@ -842,14 +911,9 @@ class DlcNotifier extends StateNotifier<DlcState> {
         mnemonic: mnemonic,
       );
       final orders = await _repository.listOrders(auth);
-      final balances = await _repository.syncWalletUtxos(
-        auth: auth,
-        mnemonic: mnemonic,
-      );
       state = state.copyWith(
         processingOrder: false,
         orders: orders,
-        balances: balances,
         infoMessage: 'Order cancelled and orderbook updated.',
       );
     } catch (e) {

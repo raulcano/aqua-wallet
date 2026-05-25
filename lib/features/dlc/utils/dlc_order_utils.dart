@@ -13,34 +13,40 @@ bool isDlcClosedOrder(DlcOrder order) {
     return true;
   }
   final dlcStatus = order.dlcStatus;
-  if (dlcStatus == null) {
-    return false;
-  }
-  return const {
-    'cet_closed',
-    'refund_closed',
-    'terminated',
-  }.contains(dlcStatus);
+  return dlcStatus != null && DlcOrder.terminalDlcStatuses.contains(dlcStatus);
 }
 
 bool orderShowsInOpenSection(DlcOrder order) {
-  if (order.orderId.startsWith('local-pending-')) {
-    return true;
+  if (isDlcClosedOrder(order)) {
+    return false;
   }
-  return order.isOpen;
+  return order.status == 'open';
 }
 
 bool orderShowsInLiveSection(DlcOrder order) {
-  if (orderShowsInOpenSection(order) || isDlcClosedOrder(order)) {
+  if (isDlcClosedOrder(order) || orderShowsInOpenSection(order)) {
     return false;
   }
-  return order.needsTakerAccept ||
-      order.needsMakerSign ||
-      order.isLiveDlc ||
-      order.status == 'filled' ||
-      order.status == 'pending_accept' ||
-      (order.dlcId?.isNotEmpty ?? false);
+  return order.status == 'pending_accept' || order.status == 'filled';
 }
+
+bool createResponseIndicatesMatch(DlcOrderResponse response) =>
+    response.status == 'pending_accept' || response.status == 'filled';
+
+DlcOrder orderFromCreateResponse({
+  required DlcOrderResponse response,
+  required DlcOrder pendingOrder,
+}) =>
+    DlcOrder(
+      orderId: response.orderId,
+      instrumentId: pendingOrder.instrumentId,
+      side: pendingOrder.side,
+      status: response.status,
+      quantity: pendingOrder.quantity,
+      dlcId: response.dlcId.isEmpty ? null : response.dlcId,
+      signRequired: response.signRequired,
+      pendingMatchAccept: response.pendingMatchAccept,
+    );
 
 DlcOrderInFlightPhase? resolveOrderInFlightPhase(DlcOrder order) {
   if (order.orderId.startsWith('local-pending-')) {

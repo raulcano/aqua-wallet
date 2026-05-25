@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:aqua/features/dlc/config/dlc_coordinator_http.dart';
 import 'package:aqua/features/dlc/config/dlc_config.dart';
 import 'package:aqua/features/shared/shared.dart';
 import 'package:http/http.dart' as http;
@@ -17,7 +18,7 @@ class DlcSpotPriceService {
     try {
       final response = await http
           .get(Uri.parse(url))
-          .timeout(const Duration(seconds: 8));
+          .timeout(DlcCoordinatorHttp.defaultReceiveTimeout);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         return null;
       }

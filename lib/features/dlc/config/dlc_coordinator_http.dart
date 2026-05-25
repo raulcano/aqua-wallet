@@ -4,6 +4,10 @@ import 'package:dio/dio.dart';
 abstract final class DlcCoordinatorHttp {
   static const skipBackupExtraKey = 'dlc_skip_backup';
 
+  static const Duration defaultConnectTimeout = Duration(seconds: 30);
+  static const Duration defaultReceiveTimeout = Duration(seconds: 30);
+  static const Duration defaultSendTimeout = Duration(seconds: 30);
+
   static const Duration writeReceiveTimeout = Duration(seconds: 90);
   static const Duration writeSendTimeout = Duration(seconds: 30);
 

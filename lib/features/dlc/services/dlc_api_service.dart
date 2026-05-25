@@ -168,13 +168,15 @@ class DlcApiService {
   }
 
   Future<Map<String, dynamic>> simulateOptionPayout({
-    required String walletToken,
+    String? walletToken,
     required Map<String, dynamic> body,
   }) async {
     return _post<Map<String, dynamic>>(
       '/orders/option-payout-simulation',
       body,
-      options: DlcCoordinatorHttp.bearerWriteOptions(walletToken),
+      options: walletToken == null
+          ? DlcCoordinatorHttp.writeOptions()
+          : DlcCoordinatorHttp.bearerWriteOptions(walletToken),
     );
   }
 
@@ -319,27 +321,44 @@ class DlcApiService {
     final response = error.response;
     final statusCode = response?.statusCode;
     var message = error.message ?? 'Network error';
+    String? errorCode;
     final data = response?.data;
     if (data is Map<String, dynamic>) {
+      errorCode = _readErrorCode(data);
       final detail = data['detail'];
       if (detail is String) {
         message = detail;
       } else if (detail is Map) {
+        errorCode ??= _readErrorCode(Map<String, dynamic>.from(detail));
         message = detail['message']?.toString() ??
             detail['reason']?.toString() ??
+            detail['detail']?.toString() ??
             message;
       } else if (detail is List && detail.isNotEmpty) {
         message = detail.first.toString();
+      } else {
+        message = data['message']?.toString() ?? message;
       }
     }
     return DlcApiException(
       message: message,
       statusCode: statusCode,
+      errorCode: errorCode,
       isTimeout: error.type == DioExceptionType.receiveTimeout ||
           error.type == DioExceptionType.sendTimeout ||
           error.type == DioExceptionType.connectionTimeout,
       isConnectionError: error.type == DioExceptionType.connectionError,
     );
+  }
+
+  String? _readErrorCode(Map<String, dynamic> data) {
+    for (final key in ['code', 'error', 'reason']) {
+      final value = data[key];
+      if (value is String && value.isNotEmpty) {
+        return value;
+      }
+    }
+    return null;
   }
 }
 

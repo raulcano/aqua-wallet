@@ -19,7 +19,12 @@ class DlcWalletContextResolver {
     required String mnemonic,
   }) async {
     final config = _ref.read(dlcConfigProvider);
-    final subaccount = _findBitcoinSubaccount(config.network);
+    final resolved = await Future.wait([
+      _findBitcoinSubaccount(config.network),
+      _loadBitcoinUtxos(),
+    ]);
+    final subaccount = resolved[0] as Subaccount?;
+    final utxos = resolved[1] as List<GdkUnspentOutputs>;
     if (subaccount == null) {
       throw StateError(
         'No native segwit Bitcoin subaccount found for DLC trading',
@@ -30,8 +35,6 @@ class DlcWalletContextResolver {
     if (userPath == null || userPath.length < 3) {
       throw StateError('Bitcoin subaccount is missing a derivation path');
     }
-
-    final utxos = await _loadBitcoinUtxos();
     return DlcBitcoinWalletContext(
       walletOriginId: walletId,
       walletLabel: walletLabel,
@@ -43,11 +46,25 @@ class DlcWalletContextResolver {
     );
   }
 
-  Subaccount? _findBitcoinSubaccount(DlcCoordinatorNetwork network) {
+  Future<Subaccount?> _findBitcoinSubaccount(
+    DlcCoordinatorNetwork network,
+  ) async {
     final expectedCoinType =
         network == DlcCoordinatorNetwork.testnet3 ? 1 : 0;
-    final subaccounts =
+    var subaccounts =
         _ref.read(subaccountsProvider).value?.subaccounts ?? const [];
+    if (subaccounts.isEmpty) {
+      final bitcoinSubaccounts =
+          await _ref.read(bitcoinProvider).getSubaccounts();
+      subaccounts = [
+        ...?bitcoinSubaccounts?.map(
+          (s) => Subaccount(
+            subaccount: s,
+            networkType: NetworkType.bitcoin,
+          ),
+        ),
+      ];
+    }
 
     bool isNativeSegwitBitcoin(Subaccount s) =>
         s.networkType == NetworkType.bitcoin &&

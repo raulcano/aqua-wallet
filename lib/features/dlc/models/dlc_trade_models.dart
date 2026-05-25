@@ -70,8 +70,9 @@ class DlcOptionPayoutSimulationRequest {
     required this.strike,
     required this.premiumPerContractSats,
     required this.outcomePrice,
-    this.premiumPaidUpfront = false,
+    this.premiumPaidUpfront = true,
     this.networkFeeSats = 0,
+    this.numDigits = 8,
   });
 
   final String side;
@@ -83,6 +84,7 @@ class DlcOptionPayoutSimulationRequest {
   final num outcomePrice;
   final bool premiumPaidUpfront;
   final num networkFeeSats;
+  final int numDigits;
 
   Map<String, dynamic> toJson() => {
         'side': side,
@@ -94,7 +96,27 @@ class DlcOptionPayoutSimulationRequest {
         'outcome_price': outcomePrice,
         'premium_paid_upfront': premiumPaidUpfront,
         'network_fee_sats': networkFeeSats,
+        'num_digits': numDigits,
       };
+}
+
+class DlcOutcomeIntervalBand {
+  const DlcOutcomeIntervalBand({
+    required this.start,
+    required this.end,
+  });
+
+  final num start;
+  final num end;
+
+  factory DlcOutcomeIntervalBand.fromJson(Map<String, dynamic> json) {
+    final start = json['start'] ?? json['outcome_lo'] ?? json['lo'];
+    final end = json['end'] ?? json['outcome_hi'] ?? json['hi'];
+    return DlcOutcomeIntervalBand(
+      start: start as num? ?? 0,
+      end: end as num? ?? 0,
+    );
+  }
 }
 
 class DlcPayoutChartPoint {
@@ -122,33 +144,46 @@ class DlcPayoutChartInterval {
 class DlcOptionPayoutSimulationResult {
   const DlcOptionPayoutSimulationResult({
     required this.raw,
-    this.walletPnlSats,
+    this.roundedPnlSats,
     this.walletCollateralSats,
     this.premiumPaidSats,
     this.premiumReceivedSats,
+    this.premiumEmbeddedInDlcSats,
     this.partnerFeeSats,
+    this.walletFeeSats,
+    this.networkFeeSats,
+    this.totalFeeSats,
     this.roundedSettlementPayoutSats,
     this.roundingDeltaSats,
     this.canonicalPayoutSats,
     this.intervals = const [],
     this.canonicalPoints = const [],
+    this.outcomeInterval,
     this.outcomePrice,
     this.strikePrice,
   });
 
   final Map<String, dynamic> raw;
-  final num? walletPnlSats;
+  final num? roundedPnlSats;
   final num? walletCollateralSats;
   final num? premiumPaidSats;
   final num? premiumReceivedSats;
+  final num? premiumEmbeddedInDlcSats;
   final num? partnerFeeSats;
+  final num? walletFeeSats;
+  final num? networkFeeSats;
+  final num? totalFeeSats;
   final num? roundedSettlementPayoutSats;
   final num? roundingDeltaSats;
   final num? canonicalPayoutSats;
   final List<DlcPayoutChartInterval> intervals;
   final List<DlcPayoutChartPoint> canonicalPoints;
+  final DlcOutcomeIntervalBand? outcomeInterval;
   final num? outcomePrice;
   final num? strikePrice;
+
+  /// Back-compat alias for [roundedPnlSats].
+  num? get walletPnlSats => roundedPnlSats;
 
   bool get hasChartData =>
       intervals.isNotEmpty || canonicalPoints.isNotEmpty;
@@ -164,36 +199,47 @@ class DlcOptionPayoutSimulationResult {
       return null;
     }
 
+    final outcomeIntervalRaw = json['outcome_interval'];
     return DlcOptionPayoutSimulationResult(
       raw: json,
-      walletPnlSats: readNum([
-        'wallet_pnl_sats',
+      roundedPnlSats: readNum([
         'rounded_pnl_sats',
+        'wallet_pnl_sats',
         'estimated_wallet_pnl_sats',
         'wallet_pnl',
       ]),
       walletCollateralSats: readNum([
-        'wallet_collateral_sats',
         'wallet_posted_collateral_sats',
+        'wallet_collateral_sats',
         'wallet_collateral',
       ]),
       premiumPaidSats: readNum([
-        'premium_paid_sats',
         'premium_paid_upfront_sats',
+        'premium_paid_sats',
         'premium_paid',
       ]),
       premiumReceivedSats: readNum([
-        'premium_received_sats',
         'premium_received_upfront_sats',
+        'premium_received_sats',
         'premium_received',
+      ]),
+      premiumEmbeddedInDlcSats: readNum([
+        'premium_embedded_in_dlc_sats',
+        'premium_embedded_sats',
       ]),
       partnerFeeSats: readNum([
         'partner_fee_sats',
         'partner_wallet_fee_sats',
       ]),
+      walletFeeSats: readNum([
+        'wallet_fee_sats',
+        'wallet_service_fee_sats',
+      ]),
+      networkFeeSats: readNum(['network_fee_sats']),
+      totalFeeSats: readNum(['total_fee_sats']),
       roundedSettlementPayoutSats: readNum([
-        'rounded_settlement_payout_sats',
         'wallet_rounded_settlement_payout_sats',
+        'rounded_settlement_payout_sats',
         'settlement_payout_sats',
       ]),
       roundingDeltaSats: readNum(['rounding_delta_sats']),
@@ -203,6 +249,9 @@ class DlcOptionPayoutSimulationResult {
       ]),
       intervals: _parseIntervals(json),
       canonicalPoints: _parseCanonicalPoints(json),
+      outcomeInterval: outcomeIntervalRaw is Map<String, dynamic>
+          ? DlcOutcomeIntervalBand.fromJson(outcomeIntervalRaw)
+          : null,
       outcomePrice: readNum([
         'outcome_price',
         'btc_usd_outcome',
@@ -222,15 +271,18 @@ class DlcOptionPayoutSimulationResult {
       return const [];
     }
     return raw.whereType<Map<String, dynamic>>().map((item) {
-      final lo = item['outcome_lo'] ??
+      final lo = item['start'] ??
+          item['outcome_lo'] ??
           item['outcome_price_lo'] ??
           item['lo'] ??
           item['min_outcome'];
-      final hi = item['outcome_hi'] ??
+      final hi = item['end'] ??
+          item['outcome_hi'] ??
           item['outcome_price_hi'] ??
           item['hi'] ??
           item['max_outcome'];
-      final payout = item['payout_sats'] ??
+      final payout = item['wallet_payout'] ??
+          item['payout_sats'] ??
           item['wallet_payout_sats'] ??
           item['rounded_payout_sats'] ??
           item['payout'];
@@ -252,10 +304,12 @@ class DlcOptionPayoutSimulationResult {
       return const [];
     }
     return raw.whereType<Map<String, dynamic>>().map((item) {
-      final outcome = item['outcome'] ??
+      final outcome = item['x'] ??
+          item['outcome'] ??
           item['outcome_price'] ??
           item['btc_usd_outcome'];
-      final payout = item['payout'] ??
+      final payout = item['wallet_payout'] ??
+          item['payout'] ??
           item['payout_sats'] ??
           item['wallet_payout_sats'] ??
           item['canonical_payout_sats'];

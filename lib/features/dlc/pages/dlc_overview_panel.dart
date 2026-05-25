@@ -198,7 +198,7 @@ class _ActivationCard extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                  onPressed: state.actionInProgress || state.isLoading
+                  onPressed: state.activationInProgress || state.isLoading
                       ? null
                       : () {
                           if (registered) {
@@ -207,8 +207,18 @@ class _ActivationCard extends StatelessWidget {
                             notifier.registerActiveWallet();
                           }
                         },
-                  icon: Icon(registered ? Icons.sync : Icons.link),
-                  label: Text(registered ? 'Re-sync wallet' : 'Activate'),
+                  icon: state.activationInProgress
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(registered ? Icons.sync : Icons.link),
+                  label: Text(
+                    state.activationInProgress
+                        ? 'Activating…'
+                        : (registered ? 'Re-sync wallet' : 'Activate'),
+                  ),
                 ),
               ),
           ],

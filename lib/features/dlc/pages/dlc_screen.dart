@@ -6,6 +6,8 @@ import 'package:aqua/features/dlc/pages/dlc_trade_panel.dart';
 import 'package:aqua/features/dlc/providers/dlc_provider.dart';
 import 'package:aqua/features/dlc/widgets/dlc_shell_widgets.dart';
 import 'package:aqua/features/shared/shared.dart';
+import 'package:flutter_hooks/flutter_hooks.dart';
+
 class DlcScreen extends HookConsumerWidget {
   const DlcScreen({super.key});
 
@@ -15,6 +17,7 @@ class DlcScreen extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(dlcProvider);
     final notifier = ref.read(dlcProvider.notifier);
+    final simulateLoading = useState(false);
 
     return Scaffold(
       appBar: AquaAppBar(
@@ -33,7 +36,7 @@ class DlcScreen extends HookConsumerWidget {
                 selectedIndex: state.selectedTabIndex,
                 onSelect: notifier.setTab,
                 isDisabled: state.isLoading ||
-                    state.isSimulating ||
+                    simulateLoading.value ||
                     state.actionInProgress,
               ),
               if (state.errorMessage != null)
@@ -48,10 +51,79 @@ class DlcScreen extends HookConsumerWidget {
                   isError: false,
                   onDismiss: notifier.clearTransientMessages,
                 ),
-              Expanded(child: _DlcTabBody(selectedIndex: state.selectedTabIndex)),
+              if (state.activationInProgress)
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Linking wallet to coordinator. You can keep using the app.',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              if (state.walletSyncInProgress)
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Syncing wallet UTXOs with coordinator. You can keep using the app.',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              if (state.negotiationInProgress)
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'DLC signing in progress. You can keep using the app.',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              Expanded(
+                child: _DlcTabBody(
+                  selectedIndex: state.selectedTabIndex,
+                  onSimulateLoadingChanged: (loading) {
+                    simulateLoading.value = loading;
+                  },
+                ),
+              ),
             ],
           ),
-          DlcActionLoadingOverlay(visible: dlcShellOverlayVisible(state)),
+          DlcActionLoadingOverlay(
+            visible: dlcShellOverlayVisible(
+              state,
+              simulateLoading: simulateLoading.value,
+            ),
+          ),
         ],
       ),
     );
@@ -59,9 +131,13 @@ class DlcScreen extends HookConsumerWidget {
 }
 
 class _DlcTabBody extends StatelessWidget {
-  const _DlcTabBody({required this.selectedIndex});
+  const _DlcTabBody({
+    required this.selectedIndex,
+    required this.onSimulateLoadingChanged,
+  });
 
   final int selectedIndex;
+  final ValueChanged<bool> onSimulateLoadingChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -69,7 +145,7 @@ class _DlcTabBody extends StatelessWidget {
       0 => const DlcOverviewPanel(),
       1 => const DlcTradePanel(),
       2 => const DlcOrdersPanel(),
-      3 => const DlcSimulatePanel(),
+      3 => DlcSimulatePanel(onLoadingChanged: onSimulateLoadingChanged),
       _ => const DlcOverviewPanel(),
     };
   }

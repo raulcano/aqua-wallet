@@ -54,10 +54,9 @@ class DlcTradePanel extends HookConsumerWidget {
                             : (v) {
                                 if (v != null) notifier.setOptionRight(v);
                               },
-                        decoration: const InputDecoration(
+                        decoration: dlcInputDecoration(
+                          context,
                           labelText: 'Option type',
-                          border: OutlineInputBorder(),
-                          isDense: true,
                         ),
                       ),
                     ),
@@ -90,10 +89,9 @@ class DlcTradePanel extends HookConsumerWidget {
                       )
                       .toList(),
                   onChanged: notifier.setTemplateInstrumentId,
-                  decoration: const InputDecoration(
+                  decoration: dlcInputDecoration(
+                    context,
                     labelText: 'Instrument template',
-                    border: OutlineInputBorder(),
-                    isDense: true,
                   ),
                 ),
                 if (state.btcUsdSpot != null) ...[
@@ -187,10 +185,9 @@ class DlcTradePanel extends HookConsumerWidget {
                         )
                         .toList(),
                     onChanged: notifier.setSelectedStrike,
-                    decoration: const InputDecoration(
+                    decoration: dlcInputDecoration(
+                      context,
                       labelText: 'Strike (USD)',
-                      border: OutlineInputBorder(),
-                      isDense: true,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -199,23 +196,22 @@ class DlcTradePanel extends HookConsumerWidget {
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
-                    decoration: const InputDecoration(
+                    decoration: dlcInputDecoration(
+                      context,
                       labelText: 'Number of contracts',
-                      helperText: '1 contract = 1 BTC. Minimum 0.01 contracts.',
-                      border: OutlineInputBorder(),
-                      isDense: true,
+                      helperText:
+                          '1 contract = 1 BTC. Minimum 0.01 contracts.',
                     ),
                   ),
                   const SizedBox(height: 8),
                   TextField(
                     controller: premiumController,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
+                    decoration: dlcInputDecoration(
+                      context,
                       labelText: 'Premium per contract (option price)',
                       helperText:
                           'Satoshis per contract (informational; coordinator matches on book).',
-                      border: OutlineInputBorder(),
-                      isDense: true,
                     ),
                   ),
                   const SizedBox(height: 8),
