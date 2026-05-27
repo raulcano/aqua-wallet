@@ -193,7 +193,7 @@ class DlcApiService {
     return _post<Map<String, dynamic>>(
       '/orders/option-payout-simulation',
       body,
-      options: walletToken == null
+      options: walletToken == null || walletToken.isEmpty
           ? DlcCoordinatorHttp.writeOptions()
           : DlcCoordinatorHttp.bearerWriteOptions(walletToken),
     );

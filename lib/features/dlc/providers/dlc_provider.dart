@@ -766,6 +766,54 @@ class DlcNotifier extends StateNotifier<DlcState> {
     return mnemonic;
   }
 
+  /// Ensures a coordinator wallet bearer token exists for simulate.
+  ///
+  /// The payout-simulation endpoint requires wallet auth on the coordinator;
+  /// this links the active wallet silently when the user has not activated yet.
+  Future<void> ensureRegisteredForSimulation() async {
+    if (state.isRegistered && state.auth != null) {
+      return;
+    }
+
+    final walletId = state.activeWalletId;
+    if (walletId == null) {
+      return;
+    }
+
+    var auth = state.auth ?? await _repository.loadAuth(walletId);
+    if (auth != null && auth.isExpired) {
+      await _repository.clearAuth(walletId);
+      auth = null;
+    } else if (auth != null) {
+      try {
+        auth = await _repository.validateStoredAuth(auth);
+      } on DlcApiException catch (e) {
+        if (_isCoordinatorReachabilityError(e)) {
+          rethrow;
+        }
+        auth = null;
+      }
+    }
+
+    if (auth != null) {
+      state = state.copyWith(auth: auth, clearError: true, clearInfo: true);
+      return;
+    }
+
+    final walletName = state.activeWalletName;
+    if (walletName == null) {
+      return;
+    }
+
+    final mnemonic = await _loadMnemonic(walletId);
+    auth = await _repository.registerWallet(
+      walletOriginId: walletId,
+      walletLabel: walletName,
+      mnemonic: mnemonic,
+    );
+    state = state.copyWith(auth: auth, clearError: true, clearInfo: true);
+  }
+
   Future<void> registerActiveWallet() async {
     final walletId = state.activeWalletId;
     final walletName = state.activeWalletName;

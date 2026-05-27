@@ -41,40 +41,49 @@ class DlcStrikeOrderbookTable extends StatelessWidget {
       children: [
         Table(
           columnWidths: const {
-            0: FlexColumnWidth(1.2),
+            0: IntrinsicColumnWidth(),
             1: FlexColumnWidth(1),
             2: FlexColumnWidth(1),
           },
+          defaultVerticalAlignment: TableCellVerticalAlignment.middle,
           children: [
-            TableRow(
-              children: [
-                _HeaderCell('Strike'),
-                _HeaderCell('Ask', align: TextAlign.end),
-                _HeaderCell('Bid', align: TextAlign.end),
-              ],
-            ),
-            for (final snapshot in sorted)
               TableRow(
                 children: [
-                  _StrikeCell(
-                    snapshot: snapshot,
-                    isSelected: snapshot.strike == selectedStrike,
-                    onTap: () => onStrikeTap(snapshot),
+                  _HeaderCell(
+                    'Strike',
+                    padding: const EdgeInsets.fromLTRB(0, 6, 16, 6),
                   ),
-                  _PremiumCell(
-                    text: bestAskPremiumSats(snapshot) ?? '—',
-                    color: DlcTradingColors.sell,
+                  _HeaderCell(
+                    'Ask',
                     align: TextAlign.end,
+                    padding: const EdgeInsets.fromLTRB(0, 6, 16, 6),
                   ),
-                  _PremiumCell(
-                    text: bestBidPremiumSats(snapshot) ?? '—',
-                    color: DlcTradingColors.buy,
-                    align: TextAlign.end,
-                  ),
+                  _HeaderCell('Bid', align: TextAlign.end),
                 ],
               ),
-          ],
-        ),
+              for (final snapshot in sorted)
+                TableRow(
+                  children: [
+                    _StrikeCell(
+                      snapshot: snapshot,
+                      isSelected: snapshot.strike == selectedStrike,
+                      onTap: () => onStrikeTap(snapshot),
+                    ),
+                    _PremiumCell(
+                      text: bestAskPremiumSats(snapshot) ?? '—',
+                      color: DlcTradingColors.sell,
+                      align: TextAlign.end,
+                      padding: const EdgeInsets.fromLTRB(0, 8, 16, 8),
+                    ),
+                    _PremiumCell(
+                      text: bestBidPremiumSats(snapshot) ?? '—',
+                      color: DlcTradingColors.buy,
+                      align: TextAlign.end,
+                    ),
+                  ],
+                ),
+            ],
+          ),
         const SizedBox(height: 8),
         Text(
           'Tap a strike to view full depth. Premiums are per contract (sats).',
@@ -86,15 +95,20 @@ class DlcStrikeOrderbookTable extends StatelessWidget {
 }
 
 class _HeaderCell extends StatelessWidget {
-  const _HeaderCell(this.text, {this.align = TextAlign.start});
+  const _HeaderCell(
+    this.text, {
+    this.align = TextAlign.start,
+    this.padding = const EdgeInsets.symmetric(vertical: 6),
+  });
 
   final String text;
   final TextAlign align;
+  final EdgeInsets padding;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: padding,
       child: Text(
         text,
         textAlign: align,
@@ -122,7 +136,7 @@ class _StrikeCell extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.fromLTRB(0, 8, 16, 8),
         child: Text(
           '\$${snapshot.strike.round()}',
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -141,16 +155,18 @@ class _PremiumCell extends StatelessWidget {
     required this.text,
     required this.color,
     this.align = TextAlign.start,
+    this.padding = const EdgeInsets.symmetric(vertical: 8),
   });
 
   final String text;
   final Color color;
   final TextAlign align;
+  final EdgeInsets padding;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: padding,
       child: Text(
         text,
         textAlign: align,

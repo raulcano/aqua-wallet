@@ -24,6 +24,10 @@ class DlcTradePanel extends HookConsumerWidget {
     final premium = num.tryParse(premiumController.text.trim()) ?? 0;
     final quantity = num.tryParse(quantityController.text.trim()) ?? 0;
     final estimatedTotal = (premium * quantity).round();
+    final dropdownTextStyle = Theme.of(context).textTheme.bodySmall;
+    final dropdownLabelStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        );
 
     return DlcTabScrollView(
       onRefresh: notifier.refreshTradeData,
@@ -41,13 +45,24 @@ class DlcTradePanel extends HookConsumerWidget {
                 ),
                 const SizedBox(height: 8),
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
+                    SizedBox(
+                      width: 132,
                       child: DropdownButtonFormField<String>(
+                        isExpanded: true,
                         value: state.optionRight,
-                        items: const [
-                          DropdownMenuItem(value: 'C', child: Text('Calls')),
-                          DropdownMenuItem(value: 'P', child: Text('Puts')),
+                        style: dropdownTextStyle,
+                        icon: const Icon(Icons.arrow_drop_down, size: 20),
+                        items: [
+                          DropdownMenuItem(
+                            value: 'C',
+                            child: Text('Calls', style: dropdownTextStyle),
+                          ),
+                          DropdownMenuItem(
+                            value: 'P',
+                            child: Text('Puts', style: dropdownTextStyle),
+                          ),
                         ],
                         onChanged: state.isLoadingTradeData
                             ? null
@@ -57,42 +72,48 @@ class DlcTradePanel extends HookConsumerWidget {
                         decoration: dlcInputDecoration(
                           context,
                           labelText: 'Option type',
+                        ).copyWith(
+                          labelStyle: dropdownLabelStyle,
+                          floatingLabelBehavior: FloatingLabelBehavior.always,
                         ),
                       ),
                     ),
                     const SizedBox(width: 8),
-                    IconButton(
-                      onPressed: state.isLoadingTradeData
-                          ? null
-                          : notifier.refreshTradeData,
-                      icon: const Icon(Icons.refresh),
-                      tooltip: 'Refresh strikes & books',
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        isExpanded: true,
+                        value: tradeInstruments.any(
+                          (i) => i.instrumentId == selectedTemplate,
+                        )
+                            ? selectedTemplate
+                            : null,
+                        style: dropdownTextStyle,
+                        icon: const Icon(Icons.arrow_drop_down, size: 20),
+                        items: tradeInstruments
+                            .map(
+                              (i) => DropdownMenuItem(
+                                value: i.instrumentId,
+                                child: Text(
+                                  dlcFormatInstrumentTemplateLabel(
+                                    i.instrumentId,
+                                  ),
+                                  style: dropdownTextStyle,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: notifier.setTemplateInstrumentId,
+                        decoration: dlcInputDecoration(
+                          context,
+                          labelText: 'Instrument',
+                        ).copyWith(
+                          labelStyle: dropdownLabelStyle,
+                          floatingLabelBehavior: FloatingLabelBehavior.always,
+                        ),
+                      ),
                     ),
                   ],
-                ),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  value: tradeInstruments.any(
-                    (i) => i.instrumentId == selectedTemplate,
-                  )
-                      ? selectedTemplate
-                      : null,
-                  items: tradeInstruments
-                      .map(
-                        (i) => DropdownMenuItem(
-                          value: i.instrumentId,
-                          child: Text(
-                            i.instrumentId,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: notifier.setTemplateInstrumentId,
-                  decoration: dlcInputDecoration(
-                    context,
-                    labelText: 'Instrument template',
-                  ),
                 ),
                 if (state.btcUsdSpot != null) ...[
                   const SizedBox(height: 8),

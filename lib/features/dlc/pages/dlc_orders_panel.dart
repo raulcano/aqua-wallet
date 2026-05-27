@@ -178,11 +178,17 @@ class _CompactOrderEntry extends StatelessWidget {
               onPressed: () => _showOrderInfoDialog(context, order),
             ),
             if (showCancel && order.isOpen)
-              TextButton(
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Cancel order',
                 onPressed: actionInProgress
                     ? null
                     : () => _confirmCancel(context, order),
-                child: const Text('Cancel'),
+                icon: Icon(
+                  Icons.delete_outline,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.error,
+                ),
               ),
           ],
         ),

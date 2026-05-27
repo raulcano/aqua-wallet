@@ -25,6 +25,12 @@ num? dlcStrikeUsdFromInstrumentId(String instrumentId) {
   return null;
 }
 
+String dlcFormatInstrumentTemplateLabel(String instrumentId) =>
+    instrumentId.replaceAll(
+      RegExp('-$_strikePlaceholderPattern-', caseSensitive: false),
+      '-',
+    );
+
 bool dlcInstrumentHasStrikePlaceholder(String instrumentId) =>
     instrumentId.toUpperCase().contains(_strikePlaceholderPattern);
 

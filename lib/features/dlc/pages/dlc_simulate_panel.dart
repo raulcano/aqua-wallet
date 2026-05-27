@@ -478,7 +478,20 @@ class _DlcSimulatePanelState extends ConsumerState<DlcSimulatePanel> {
     widget.onLoadingChanged(true);
 
     try {
-      final auth = ref.read(dlcProvider).auth;
+      final notifier = ref.read(dlcProvider.notifier);
+      await notifier.ensureRegisteredForSimulation();
+
+      final dlcState = ref.read(dlcProvider);
+      final auth = dlcState.auth;
+      if (auth == null) {
+        _handleSimulationError(
+          dlcState.activeWalletId == null
+              ? 'Open Marketplace from a wallet to simulate payouts.'
+              : 'Could not link wallet to the coordinator for simulation.',
+        );
+        return;
+      }
+
       final req = DlcOptionPayoutSimulationRequest(
         side: _side,
         role: _orderRole,

@@ -244,8 +244,10 @@ class DlcRepository {
     DlcWalletAuth? auth,
     required DlcOptionPayoutSimulationRequest request,
   }) async {
+    final walletToken = auth?.walletToken;
     final json = await _api.simulateOptionPayout(
-      walletToken: auth?.walletToken,
+      walletToken:
+          walletToken != null && walletToken.isNotEmpty ? walletToken : null,
       body: request.toJson(),
     );
     return DlcOptionPayoutSimulationResult.fromJson(json);
