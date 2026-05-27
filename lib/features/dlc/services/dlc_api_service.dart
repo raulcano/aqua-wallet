@@ -6,9 +6,10 @@ import 'package:aqua/features/shared/shared.dart';
 import 'package:dio/dio.dart';
 
 class DlcApiService {
-  DlcApiService(this._dio);
+  DlcApiService(this._dio, this._config);
 
   final Dio _dio;
+  final DlcConfig _config;
 
   static Options _bearerOptions(String walletToken) =>
       DlcCoordinatorHttp.bearerOptions(walletToken);
@@ -19,7 +20,18 @@ class DlcApiService {
   }
 
   Future<String> createNonce() async {
-    final response = await _post<Map<String, dynamic>>('/auth/nonce', {});
+    final partnerToken = _config.partnerToken;
+    if (partnerToken.isEmpty) {
+      throw DlcApiException(
+        message: 'DLC partner token is not configured in .env',
+        statusCode: 401,
+      );
+    }
+    final response = await _post<Map<String, dynamic>>(
+      '/auth/nonce',
+      {},
+      options: DlcCoordinatorHttp.partnerWriteOptions(partnerToken),
+    );
     return response['nonce'] as String? ?? '';
   }
 
@@ -30,6 +42,13 @@ class DlcApiService {
     required String label,
     required List<DlcUtxoProof> utxos,
   }) async {
+    final partnerToken = _config.partnerToken;
+    if (partnerToken.isEmpty) {
+      throw DlcApiException(
+        message: 'DLC partner token is not configured in .env',
+        statusCode: 401,
+      );
+    }
     final response = await _post<Map<String, dynamic>>(
       '/auth/wallet',
       {
@@ -39,7 +58,7 @@ class DlcApiService {
         'label': label,
         'utxos': utxos.map((u) => u.toJson()).toList(),
       },
-      options: DlcCoordinatorHttp.writeOptions(),
+      options: DlcCoordinatorHttp.partnerWriteOptions(partnerToken),
     );
     return DlcWalletRegistration.fromJson(response);
   }
@@ -363,5 +382,8 @@ class DlcApiService {
 }
 
 final dlcApiServiceProvider = Provider<DlcApiService>(
-  (ref) => DlcApiService(ref.read(dlcDioProvider)),
+  (ref) => DlcApiService(
+    ref.read(dlcDioProvider),
+    ref.read(dlcConfigProvider),
+  ),
 );

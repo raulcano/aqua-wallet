@@ -158,7 +158,7 @@ class DlcTradePanel extends HookConsumerWidget {
                 const SizedBox(height: 8),
                 if (!state.isRegistered)
                   const Text(
-                    'Activate your wallet on Overview before creating orders.',
+                    'Activate your wallet before creating orders.',
                   )
                 else ...[
                   SegmentedButton<String>(

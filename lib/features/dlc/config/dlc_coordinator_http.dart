@@ -37,4 +37,12 @@ abstract final class DlcCoordinatorHttp {
           ...?extra,
         },
       );
+
+  /// Partner-authenticated write requests (e.g. POST /auth/nonce).
+  static Options partnerWriteOptions(String partnerToken) => Options(
+        headers: {'X-Partner-Token': partnerToken},
+        receiveTimeout: writeReceiveTimeout,
+        sendTimeout: writeSendTimeout,
+        extra: const {skipBackupExtraKey: true},
+      );
 }

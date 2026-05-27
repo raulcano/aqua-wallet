@@ -89,63 +89,43 @@ class DlcRepository {
         walletId: walletOriginId,
         walletLabel: walletLabel,
         mnemonic: mnemonic,
+        includeUtxos: false,
       ),
       _api.createNonce(),
     ]);
     final context = resolved[0] as DlcBitcoinWalletContext;
     final nonce = resolved[1] as String;
 
-    if (context.coordinatorXpub.isEmpty) {
+    final coordinatorXpub = context.coordinatorXpub.isNotEmpty
+        ? context.coordinatorXpub
+        : _signer.deriveAccountXpub(mnemonic, context.accountUserPath);
+    if (coordinatorXpub.isEmpty) {
       throw StateError('Could not read Bitcoin account xpub for registration');
     }
 
-    final signed = await Future.wait([
-      buildUtxoProofsInIsolate(
-        nonce: nonce,
-        mnemonic: mnemonic,
-        utxos: context.utxos,
-        accountUserPath: context.accountUserPath,
-      ),
-      signNonceProofCandidatesInIsolate(
-        nonce: nonce,
-        mnemonic: mnemonic,
-        accountUserPath: context.accountUserPath,
-      ),
-    ]);
-    final utxoProofs = signed[0] as List<DlcUtxoProof>;
-    final signatureCandidates = signed[1] as List<String>;
+    final xpubSignature = _signer.signXpubNonceSignature(
+      nonce: nonce,
+      mnemonic: mnemonic,
+      accountUserPath: context.accountUserPath,
+    );
 
-    DlcApiException? lastError;
-    for (final signature in signatureCandidates) {
-      try {
-        final registration = await _api.registerWallet(
-          xpub: context.coordinatorXpub,
-          nonce: nonce,
-          xpubSignature: signature,
-          label: walletLabel,
-          utxos: utxoProofs,
-        );
-        final auth = DlcWalletAuth(
-          walletOriginId: walletOriginId,
-          walletLabel: walletLabel,
-          walletXpub: context.coordinatorXpub,
-          walletId: registration.walletId,
-          walletToken: registration.walletToken,
-          expiresAt: registration.expiresAt,
-        );
-        await _authStorage.store(auth);
-        return auth;
-      } on DlcApiException catch (e) {
-        lastError = e;
-        if (e.statusCode != null && e.statusCode! >= 400 && e.statusCode! < 500) {
-          final message = e.message.toLowerCase();
-          if (!message.contains('signature') && !message.contains('nonce')) {
-            rethrow;
-          }
-        }
-      }
-    }
-    throw lastError ?? DlcApiException(message: 'Wallet registration failed');
+    final registration = await _api.registerWallet(
+      xpub: coordinatorXpub,
+      nonce: nonce,
+      xpubSignature: xpubSignature,
+      label: walletLabel,
+      utxos: const [],
+    );
+    final auth = DlcWalletAuth(
+      walletOriginId: walletOriginId,
+      walletLabel: walletLabel,
+      walletXpub: context.coordinatorXpub,
+      walletId: registration.walletId,
+      walletToken: registration.walletToken,
+      expiresAt: registration.expiresAt,
+    );
+    await _authStorage.store(auth);
+    return auth;
   }
 
   Future<DlcWalletSyncResult> syncWalletUtxos({

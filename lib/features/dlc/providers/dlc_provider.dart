@@ -240,18 +240,63 @@ class DlcNotifier extends StateNotifier<DlcState> {
   }
 
   Future<void> _reloadWalletData(StoredWallet wallet) async {
-    final readiness = await _repository.getSystemReadiness();
-    final networkHint = _repository.networkMismatchHint(readiness);
     final config = _ref.read(dlcConfigProvider);
     final hints = <String>[
       if (config.partnerToken.isEmpty)
         'DLC partner token is not configured in .env',
-      if (!readiness.tradingReady && readiness.blockers.isNotEmpty)
-        readiness.blockers.join(', '),
-      if (!readiness.chainBackendOk)
-        readiness.chainBackendError ?? 'Coordinator chain backend is unhealthy',
-      if (networkHint != null) networkHint,
     ];
+
+    var auth = await _repository.loadAuth(wallet.id);
+    DlcWalletSyncResult? balances;
+    List<DlcOrder> orders = const [];
+    List<DlcInstrument> instruments = const [];
+    DlcSystemReadiness? readiness;
+
+    if (auth != null && !auth.isExpired) {
+      try {
+        auth = await _repository.validateStoredAuth(auth);
+      } on DlcApiException catch (e) {
+        if (_isCoordinatorReachabilityError(e)) {
+          hints.add(
+            dlcCoordinatorConnectionHint(baseUrl: config.baseUrl, error: e),
+          );
+        } else {
+          rethrow;
+        }
+      }
+    } else if (auth != null && auth.isExpired) {
+      await _repository.clearAuth(wallet.id);
+      auth = null;
+    }
+
+    state = state.copyWith(
+      isLoading: false,
+      auth: auth,
+      infoMessage: auth == null
+          ? 'Activate your wallet on Overview to trade and sync coordinator balances.'
+          : null,
+    );
+
+    try {
+      readiness = await _repository.getSystemReadiness();
+      final networkHint = _repository.networkMismatchHint(readiness);
+      if (!readiness.tradingReady && readiness.blockers.isNotEmpty) {
+        hints.add(readiness.blockers.join(', '));
+      }
+      if (!readiness.chainBackendOk) {
+        hints.add(
+          readiness.chainBackendError ??
+              'Coordinator chain backend is unhealthy',
+        );
+      }
+      if (networkHint != null) {
+        hints.add(networkHint);
+      }
+    } on DlcApiException catch (e) {
+      hints.add(
+        dlcCoordinatorConnectionHint(baseUrl: config.baseUrl, error: e),
+      );
+    }
 
     try {
       final partnerConfig = await _repository.getPartnerConfig();
@@ -261,16 +306,11 @@ class DlcNotifier extends StateNotifier<DlcState> {
     } on DlcApiException catch (e) {
       if (isDlcPartnerConfigError(e)) {
         hints.add('Partner token rejected by coordinator (${e.message})');
+      } else if (_isCoordinatorReachabilityError(e)) {
+        hints.add(
+          dlcCoordinatorConnectionHint(baseUrl: config.baseUrl, error: e),
+        );
       }
-    }
-
-    var auth = await _repository.loadAuth(wallet.id);
-    DlcWalletSyncResult? balances;
-    List<DlcOrder> orders = const [];
-    List<DlcInstrument> instruments = const [];
-
-    if (auth != null && !auth.isExpired) {
-      auth = await _repository.validateStoredAuth(auth);
     }
 
     if (auth != null && !auth.isExpired) {
@@ -281,17 +321,28 @@ class DlcNotifier extends StateNotifier<DlcState> {
         if (e.statusCode == 401 || e.statusCode == 403) {
           await _repository.clearAuth(wallet.id);
           auth = null;
+        } else if (_isCoordinatorReachabilityError(e)) {
+          hints.add(
+            dlcCoordinatorConnectionHint(baseUrl: config.baseUrl, error: e),
+          );
         } else {
           rethrow;
         }
       }
-    } else if (auth != null && auth.isExpired) {
-      await _repository.clearAuth(wallet.id);
-      auth = null;
     }
 
     if (auth == null) {
-      instruments = await _repository.listInstruments(null);
+      try {
+        instruments = await _repository.listInstruments(null);
+      } on DlcApiException catch (e) {
+        if (_isCoordinatorReachabilityError(e)) {
+          hints.add(
+            dlcCoordinatorConnectionHint(baseUrl: config.baseUrl, error: e),
+          );
+        } else if (!isDlcPartnerConfigError(e)) {
+          rethrow;
+        }
+      }
     }
 
     final tradeDefaults = _initialTradeUi(instruments);
@@ -322,6 +373,9 @@ class DlcNotifier extends StateNotifier<DlcState> {
       unawaited(refreshTradeData());
     }
   }
+
+  bool _isCoordinatorReachabilityError(DlcApiException error) =>
+      error.isConnectionError || error.isTimeout;
 
   void clearTransientMessages() {
     state = state.copyWith(clearError: true, clearInfo: true);

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:aqua/data/models/gdk_models.dart';
 import 'package:aqua/features/dlc/crypto/coordinator_cet_signer.dart';
+import 'package:aqua/features/dlc/crypto/coordinator_wallet_signature.dart';
 import 'package:aqua/features/dlc/crypto/dlc_ecdsa_der.dart';
 import 'package:aqua/features/dlc/crypto/dlc_funding_signature_wire.dart';
 import 'package:aqua/features/dlc/crypto/ecdsa_adaptor_signature.dart';
@@ -66,37 +67,21 @@ class DlcLocalSigner {
   String derivePublicKeyHexAtPath(String mnemonic, String path) =>
       hex.encode(_masterNode(mnemonic).derivePath(path).publicKey);
 
-  List<String> signNonceProofCandidates({
+  /// Signs the coordinator nonce for wallet registration (`xpub_signature`).
+  ///
+  /// Uses the account-level private key that matches the submitted xpub and
+  /// bitcoinlib-compatible message normalization over `nonce.encode('utf-8').hex()`.
+  String signXpubNonceSignature({
     required String nonce,
     required String mnemonic,
     required List<int> accountUserPath,
   }) {
     final accountPath = accountDerivationPath(accountUserPath);
-    final fundingPath = fundingDerivationPath(accountUserPath);
-    final keys = <String>{
-      derivePrivateKeyHexAtPath(mnemonic, accountPath),
-      derivePrivateKeyHexAtPath(mnemonic, fundingPath),
-    };
-
-    final digests = <Uint8List>{
-      Uint8List.fromList(sha256.convert(utf8.encode(nonce)).bytes),
-      Uint8List.fromList(
-        sha256.convert(utf8.encode(hex.encode(utf8.encode(nonce)))).bytes,
-      ),
-      Uint8List.fromList(
-        sha256
-            .convert(sha256.convert(utf8.encode(nonce)).bytes)
-            .bytes,
-      ),
-    };
-
-    final signatures = <String>{};
-    for (final key in keys) {
-      for (final digest in digests) {
-        signatures.add(_signDigestHex(digest: digest, privateKeyHex: key));
-      }
-    }
-    return signatures.toList();
+    final privateKeyHex = derivePrivateKeyHexAtPath(mnemonic, accountPath);
+    return signCoordinatorNonceDerHex(
+      nonce: nonce,
+      accountPrivateKeyHex: privateKeyHex,
+    );
   }
 
   List<DlcUtxoProof> buildUtxoProofs({

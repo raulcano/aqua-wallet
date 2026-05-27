@@ -292,11 +292,6 @@ class _BalanceSplitCard extends StatelessWidget {
               icon: Icons.pie_chart_outline,
               title: 'Balance split',
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Coordinator-visible balances. Sync UTXOs after funding or settlement.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
             const SizedBox(height: 12),
             ClipRRect(
               borderRadius: BorderRadius.circular(4),

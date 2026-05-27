@@ -17,14 +17,10 @@ class DlcWalletContextResolver {
     required String walletId,
     required String walletLabel,
     required String mnemonic,
+    bool includeUtxos = true,
   }) async {
     final config = _ref.read(dlcConfigProvider);
-    final resolved = await Future.wait([
-      _findBitcoinSubaccount(config.network),
-      _loadBitcoinUtxos(),
-    ]);
-    final subaccount = resolved[0] as Subaccount?;
-    final utxos = resolved[1] as List<GdkUnspentOutputs>;
+    final subaccount = await _findBitcoinSubaccount(config.network);
     if (subaccount == null) {
       throw StateError(
         'No native segwit Bitcoin subaccount found for DLC trading',
@@ -35,6 +31,8 @@ class DlcWalletContextResolver {
     if (userPath == null || userPath.length < 3) {
       throw StateError('Bitcoin subaccount is missing a derivation path');
     }
+    final utxos =
+        includeUtxos ? await _loadBitcoinUtxos() : const <GdkUnspentOutputs>[];
     return DlcBitcoinWalletContext(
       walletOriginId: walletId,
       walletLabel: walletLabel,

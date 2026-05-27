@@ -9,7 +9,7 @@ class DlcsTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MarketplaceTile(
-      title: 'DLCs',
+      title: 'Trade Options',
       subtitle: 'Bitcoin PUT and CALL options via DLCs',
       iconBuilder: ({color, required size}) =>
           AquaIcon.chart(color: color, size: size),

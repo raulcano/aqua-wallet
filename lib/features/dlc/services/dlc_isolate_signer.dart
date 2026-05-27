@@ -184,14 +184,14 @@ class _UtxoProofIsolateRequest {
   final List<_DlcSigningUtxoWire> utxos;
 }
 
-/// Derives xpub registration signature candidates off the UI isolate.
-Future<List<String>> signNonceProofCandidatesInIsolate({
+/// Signs the coordinator wallet-registration nonce off the UI isolate.
+Future<String> signXpubNonceSignatureInIsolate({
   required String nonce,
   required String mnemonic,
   required List<int> accountUserPath,
 }) {
   return compute(
-    _signNonceProofCandidatesEntry,
+    _signXpubNonceSignatureEntry,
     _NonceProofIsolateRequest(
       nonce: nonce,
       mnemonic: mnemonic,
@@ -200,9 +200,9 @@ Future<List<String>> signNonceProofCandidatesInIsolate({
   );
 }
 
-List<String> _signNonceProofCandidatesEntry(_NonceProofIsolateRequest request) {
+String _signXpubNonceSignatureEntry(_NonceProofIsolateRequest request) {
   const signer = DlcLocalSigner();
-  return signer.signNonceProofCandidates(
+  return signer.signXpubNonceSignature(
     nonce: request.nonce,
     mnemonic: request.mnemonic,
     accountUserPath: request.accountUserPath,

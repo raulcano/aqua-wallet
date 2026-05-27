@@ -6,10 +6,12 @@ class DlcBackupInterceptor extends Interceptor {
   DlcBackupInterceptor({
     required this.backupBaseUrl,
     required this.dioOptions,
+    required this.partnerToken,
   });
 
   final String backupBaseUrl;
   final BaseOptions dioOptions;
+  final String partnerToken;
 
   static const _retriedKey = 'dlc_backup_retried';
 
@@ -26,12 +28,21 @@ class DlcBackupInterceptor extends Interceptor {
     }
 
     final backupDio = Dio(dioOptions.copyWith(baseUrl: backupBaseUrl));
+    if (partnerToken.isNotEmpty) {
+      backupDio.options.headers['X-Partner-Token'] = partnerToken;
+    }
     try {
       final response = await backupDio.fetch(
-        err.requestOptions.copyWith(extra: {
-          ...err.requestOptions.extra,
-          _retriedKey: true,
-        }),
+        err.requestOptions.copyWith(
+          extra: {
+            ...err.requestOptions.extra,
+            _retriedKey: true,
+          },
+          headers: {
+            ...err.requestOptions.headers,
+            if (partnerToken.isNotEmpty) 'X-Partner-Token': partnerToken,
+          },
+        ),
       );
       handler.resolve(response);
     } catch (_) {

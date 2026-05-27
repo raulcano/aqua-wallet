@@ -70,44 +70,6 @@ class DlcScreen extends HookConsumerWidget {
                     ],
                   ),
                 ),
-              if (state.walletSyncInProgress)
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Syncing wallet UTXOs with coordinator. You can keep using the app.',
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              if (state.negotiationInProgress)
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'DLC signing in progress. You can keep using the app.',
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
               Expanded(
                 child: _DlcTabBody(
                   selectedIndex: state.selectedTabIndex,

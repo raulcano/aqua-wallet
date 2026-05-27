@@ -7,5 +7,8 @@
         <domain includeSubdomains="false">10.0.2.2</domain>
         <domain includeSubdomains="false">192.168.0.198</domain>
         <domain includeSubdomains="false">192.168.0.160</domain>
+        <domain includeSubdomains="false">backend.coldpay.de</domain>
+        <!-- Use when .env points at the coordinator IP instead of hostname -->
+        <domain includeSubdomains="false">82.165.0.238</domain>
     </domain-config>
 </network-security-config>

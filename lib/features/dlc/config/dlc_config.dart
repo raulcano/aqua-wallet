@@ -106,6 +106,7 @@ final dlcDioProvider = Provider<Dio>((ref) {
       DlcBackupInterceptor(
         backupBaseUrl: config.backupBaseUrl,
         dioOptions: baseOptions,
+        partnerToken: config.partnerToken,
       ),
     );
   }
