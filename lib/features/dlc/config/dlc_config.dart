@@ -24,6 +24,7 @@ class DlcConfig {
     required this.btcUsdTickerUrl,
     required this.defaultPremiumSatoshisPerContract,
     required this.showExpiredInstruments,
+    required this.explorerDashboardUrl,
   });
 
   final String baseUrl;
@@ -34,6 +35,7 @@ class DlcConfig {
   final String btcUsdTickerUrl;
   final int defaultPremiumSatoshisPerContract;
   final bool showExpiredInstruments;
+  final String explorerDashboardUrl;
 
   String get storageSuffix => network == DlcCoordinatorNetwork.testnet3
       ? 'testnet'
@@ -60,6 +62,11 @@ DlcConfig _dlcConfigForEnv(Env env) {
     Env.mainnet || Env.regtest => Secrets.kDlcCoordinatorBackupUrl,
   };
 
+  final explorerDashboardUrl = switch (env) {
+    Env.testnet => Secrets.kDlcExplorerTestUrl,
+    Env.mainnet || Env.regtest => Secrets.kDlcExplorerUrl,
+  };
+
   return DlcConfig(
     baseUrl: baseUrl,
     backupBaseUrl: backupBaseUrl,
@@ -70,6 +77,7 @@ DlcConfig _dlcConfigForEnv(Env env) {
     defaultPremiumSatoshisPerContract:
         Secrets.kDlcDefaultPremiumSatoshisPerContract,
     showExpiredInstruments: Secrets.kDlcShowExpiredInstruments,
+    explorerDashboardUrl: explorerDashboardUrl,
   );
 }
 

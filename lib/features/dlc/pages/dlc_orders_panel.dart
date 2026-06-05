@@ -1,5 +1,9 @@
+import 'package:aqua/common/providers/launch_url_provider.dart';
+import 'package:aqua/features/dlc/config/dlc_config.dart';
 import 'package:aqua/features/dlc/models/dlc_models.dart';
+import 'package:aqua/features/dlc/pages/dlc_explorer_screen.dart';
 import 'package:aqua/features/dlc/providers/dlc_provider.dart';
+import 'package:aqua/features/dlc/utils/dlc_explorer_utils.dart';
 import 'package:aqua/features/dlc/utils/dlc_order_utils.dart';
 import 'package:aqua/features/dlc/widgets/dlc_shell_widgets.dart';
 import 'package:aqua/features/dlc/widgets/dlc_trading_colors.dart';
@@ -37,6 +41,8 @@ class DlcOrdersPanel extends ConsumerWidget {
           subtitle: 'Waiting for a match',
           orders: open,
           showCancel: true,
+          showFundingExplorerLink: false,
+          showSettlementExplorerLinks: false,
           notifier: notifier,
           actionInProgress: state.processingOrder,
         ),
@@ -46,6 +52,8 @@ class DlcOrdersPanel extends ConsumerWidget {
           subtitle: 'Accept, fill, or settlement in progress',
           orders: live,
           showCancel: false,
+          showFundingExplorerLink: true,
+          showSettlementExplorerLinks: false,
           notifier: notifier,
           actionInProgress: state.processingOrder,
         ),
@@ -55,6 +63,8 @@ class DlcOrdersPanel extends ConsumerWidget {
           subtitle: 'Completed DLCs',
           orders: closed,
           showCancel: false,
+          showFundingExplorerLink: false,
+          showSettlementExplorerLinks: true,
           notifier: notifier,
           actionInProgress: state.processingOrder,
         ),
@@ -69,6 +79,8 @@ class _OrderGroupSection extends StatelessWidget {
     required this.subtitle,
     required this.orders,
     required this.showCancel,
+    required this.showFundingExplorerLink,
+    required this.showSettlementExplorerLinks,
     required this.notifier,
     required this.actionInProgress,
   });
@@ -77,6 +89,8 @@ class _OrderGroupSection extends StatelessWidget {
   final String subtitle;
   final List<DlcOrder> orders;
   final bool showCancel;
+  final bool showFundingExplorerLink;
+  final bool showSettlementExplorerLinks;
   final DlcNotifier notifier;
   final bool actionInProgress;
 
@@ -101,6 +115,8 @@ class _OrderGroupSection extends StatelessWidget {
                 (order) => _CompactOrderEntry(
                   order: order,
                   showCancel: showCancel,
+                  showFundingExplorerLink: showFundingExplorerLink,
+                  showSettlementExplorerLinks: showSettlementExplorerLinks,
                   notifier: notifier,
                   actionInProgress: actionInProgress,
                 ),
@@ -112,23 +128,32 @@ class _OrderGroupSection extends StatelessWidget {
   }
 }
 
-class _CompactOrderEntry extends StatelessWidget {
+class _CompactOrderEntry extends ConsumerWidget {
   const _CompactOrderEntry({
     required this.order,
     required this.showCancel,
+    required this.showFundingExplorerLink,
+    required this.showSettlementExplorerLinks,
     required this.notifier,
     required this.actionInProgress,
   });
 
   final DlcOrder order;
   final bool showCancel;
+  final bool showFundingExplorerLink;
+  final bool showSettlementExplorerLinks;
   final DlcNotifier notifier;
   final bool actionInProgress;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final phase = resolveOrderInFlightPhase(order);
     final sideColor = DlcTradingColors.sideColor(order.side, isDark: false);
+    final fundingTxid =
+        showFundingExplorerLink ? liveOrderFundingTxid(order) : null;
+    final settlementLinks = showSettlementExplorerLinks
+        ? orderSettlementExplorerLinks(order)
+        : const <({String label, String txid})>[];
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -155,7 +180,7 @@ class _CompactOrderEntry extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${order.side.toUpperCase()} · ${formatDlcOrderRole(order)} · ${order.status}',
+                    '${order.side.toUpperCase()} · ${formatDlcOrderRole(order)} · ${formatOrderStatusLine(order)}',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: sideColor,
                         ),
@@ -163,6 +188,16 @@ class _CompactOrderEntry extends StatelessWidget {
                 ],
               ),
             ),
+            if (fundingTxid != null)
+              _MempoolTxIconButton(
+                txid: fundingTxid,
+                tooltip: 'View funding transaction',
+              ),
+            for (final link in settlementLinks)
+              _MempoolTxIconButton(
+                txid: link.txid,
+                tooltip: 'View ${link.label.toLowerCase()}',
+              ),
             if (phase != null)
               IconButton(
                 visualDensity: VisualDensity.compact,
@@ -170,12 +205,12 @@ class _CompactOrderEntry extends StatelessWidget {
                   Icons.hourglass_top,
                   color: Theme.of(context).colorScheme.primary,
                 ),
-                onPressed: () => _showInFlightDialog(context, phase),
+                onPressed: () => _showInFlightDialog(context, phase, order),
               ),
             IconButton(
               visualDensity: VisualDensity.compact,
               icon: const Icon(Icons.info_outline, size: 20),
-              onPressed: () => _showOrderInfoDialog(context, order),
+              onPressed: () => _showOrderInfoDialog(context, ref, order),
             ),
             if (showCancel && order.isOpen)
               IconButton(
@@ -222,7 +257,39 @@ class _CompactOrderEntry extends StatelessWidget {
   }
 }
 
-void _showInFlightDialog(BuildContext context, DlcOrderInFlightPhase phase) {
+class _MempoolTxIconButton extends ConsumerWidget {
+  const _MempoolTxIconButton({
+    required this.txid,
+    required this.tooltip,
+  });
+
+  final String txid;
+  final String tooltip;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isTestnet = ref.watch(dlcConfigProvider).network ==
+        DlcCoordinatorNetwork.testnet3;
+    final url = dlcMempoolTxUrl(txid: txid, isTestnet: isTestnet);
+
+    return IconButton(
+      visualDensity: VisualDensity.compact,
+      tooltip: tooltip,
+      icon: Icon(
+        Icons.open_in_new,
+        size: 20,
+        color: Theme.of(context).colorScheme.primary,
+      ),
+      onPressed: () => ref.read(launchUrlProvider.notifier).launchUrl(url),
+    );
+  }
+}
+
+void _showInFlightDialog(
+  BuildContext context,
+  DlcOrderInFlightPhase phase,
+  DlcOrder order,
+) {
   final (title, body) = switch (phase) {
     DlcOrderInFlightPhase.creatingOnCoordinator => (
         'Opening order',
@@ -240,6 +307,14 @@ void _showInFlightDialog(BuildContext context, DlcOrderInFlightPhase phase) {
         'Maker signing',
         'DLC CET signing may take a minute. The app polls every 15s.',
       ),
+    DlcOrderInFlightPhase.fundingBroadcastPending => (
+        'Funding broadcast pending',
+        order.lastErrorReason == 'funding_broadcast_failed'
+            ? 'Protocol signing is complete, but funding broadcast failed. '
+                'The app keeps polling until funding is broadcast.'
+            : 'Protocol signing is complete. Waiting for the coordinator to '
+                'broadcast the funding transaction.',
+      ),
   };
   showDialog<void>(
     context: context,
@@ -256,10 +331,23 @@ void _showInFlightDialog(BuildContext context, DlcOrderInFlightPhase phase) {
   );
 }
 
-void _showOrderInfoDialog(BuildContext context, DlcOrder order) {
+void _showOrderInfoDialog(
+  BuildContext context,
+  WidgetRef ref,
+  DlcOrder order,
+) {
+  final fundingTxid = liveOrderFundingTxid(order);
+  final settlementLinks = orderSettlementExplorerLinks(order);
+  final walletToken = ref.read(dlcProvider).auth?.walletToken;
+  final config = ref.read(dlcConfigProvider);
+  final showDlcExplorer = canOpenDlcExplorer(
+    order: order,
+    walletToken: walletToken,
+  );
+
   showDialog<void>(
     context: context,
-    builder: (context) => AlertDialog(
+    builder: (dialogContext) => AlertDialog(
       title: const Text('Order details'),
       content: SingleChildScrollView(
         child: Column(
@@ -272,19 +360,89 @@ void _showOrderInfoDialog(BuildContext context, DlcOrder order) {
             _InfoRow('Contracts', order.quantity.toString()),
             _InfoRow('Order status', order.status),
             if (order.dlcStatus != null)
-              _InfoRow('DLC status', order.dlcStatus!),
+              _InfoRow('DLC status', formatDlcStatusLabel(order)),
+            if (order.lastErrorReason != null)
+              _InfoRow('Last error', order.lastErrorReason!),
+            if (fundingTxid != null)
+              _InfoLinkRow(
+                ref: ref,
+                label: 'Funding TX',
+                txid: fundingTxid,
+              ),
+            for (final link in settlementLinks)
+              _InfoLinkRow(
+                ref: ref,
+                label: link.label,
+                txid: link.txid,
+              ),
+            if (order.dlcId != null && order.dlcId!.isNotEmpty)
+              _InfoRow('DLC ID', order.dlcId!, selectable: true),
             _InfoRow('Order ID', order.orderId, selectable: true),
           ],
         ),
       ),
       actions: [
+        if (showDlcExplorer)
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              openDlcExplorerScreen(
+                context,
+                dashboardUrl: config.explorerDashboardUrl,
+                walletToken: walletToken!,
+                dlcId: order.dlcId!,
+              );
+            },
+            child: const Text('DLC Explorer'),
+          ),
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => Navigator.pop(dialogContext),
           child: const Text('Close'),
         ),
       ],
     ),
   );
+}
+
+class _InfoLinkRow extends StatelessWidget {
+  const _InfoLinkRow({
+    required this.ref,
+    required this.label,
+    required this.txid,
+  });
+
+  final WidgetRef ref;
+  final String label;
+  final String txid;
+
+  @override
+  Widget build(BuildContext context) {
+    final isTestnet = ref.watch(dlcConfigProvider).network ==
+        DlcCoordinatorNetwork.testnet3;
+    final url = dlcMempoolTxUrl(txid: txid, isTestnet: isTestnet);
+    final linkColor = Theme.of(context).colorScheme.primary;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Text(label, style: Theme.of(context).textTheme.labelSmall),
+          const SizedBox(width: 6),
+          InkWell(
+            onTap: () => ref.read(launchUrlProvider.notifier).launchUrl(url),
+            child: Text(
+              'see here',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: linkColor,
+                    decoration: TextDecoration.underline,
+                    decorationColor: linkColor,
+                  ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _InfoRow extends StatelessWidget {

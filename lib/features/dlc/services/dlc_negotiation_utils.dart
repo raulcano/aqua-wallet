@@ -31,6 +31,23 @@ bool isDlcPartnerConfigError(DlcApiException error) {
 bool orderNeedsNegotiation(DlcOrder order) =>
     order.needsTakerAccept || order.needsMakerSign;
 
+bool orderNeedsFundingMonitor(DlcOrder order) =>
+    order.isFundingPending && (order.dlcId?.isNotEmpty ?? false);
+
+bool orderNeedsDlcBackgroundWork(DlcOrder order) =>
+    orderNeedsNegotiation(order) || orderNeedsFundingMonitor(order);
+
+bool shouldSyncUtxosForFundingTransition(DlcOrder before, DlcOrder after) {
+  if (after.hasFundingCompleted && !before.hasFundingCompleted) {
+    return true;
+  }
+  final beforeTxid = before.fundingTxid;
+  final afterTxid = after.fundingTxid;
+  return afterTxid != null &&
+      afterTxid.isNotEmpty &&
+      beforeTxid != afterTxid;
+}
+
 String createOrderDraftFingerprint({
   required String instrumentId,
   required String side,

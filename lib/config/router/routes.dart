@@ -141,6 +141,12 @@ List<RouteBase> get routes {
       builder: (context, state) => const DlcScreen(),
     ),
     GoRoute(
+      path: DlcExplorerScreen.routeName,
+      builder: (context, state) => DlcExplorerScreen(
+        args: state.extra as DlcExplorerScreenArgs,
+      ),
+    ),
+    GoRoute(
       path: SplashScreen.routeName,
       builder: (context, state) => SplashScreen(tagline: state.extra as String),
     ),

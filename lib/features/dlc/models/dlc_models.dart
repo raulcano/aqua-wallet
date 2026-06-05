@@ -205,6 +205,7 @@ class DlcOrder {
     this.pendingMatchAccept = false,
     this.dlcStatus,
     this.fundingTxid,
+    this.lastErrorReason,
     this.cancellationReason,
     this.idempotencyKey,
     this.matchRole,
@@ -213,6 +214,17 @@ class DlcOrder {
     this.closingTxid,
     this.refundTxid,
   });
+
+  static const dlcStatusSigned = 'signed';
+  static const dlcStatusFundingBroadcasted = 'funding_broadcasted';
+
+  static const terminalDlcStatuses = {
+    'cet_broadcasted',
+    'refund_broadcasted',
+    'cet_closed',
+    'refund_closed',
+    'terminated',
+  };
 
   final String orderId;
   final String instrumentId;
@@ -226,6 +238,7 @@ class DlcOrder {
   final bool pendingMatchAccept;
   final String? dlcStatus;
   final String? fundingTxid;
+  final String? lastErrorReason;
   final String? cancellationReason;
   final String? idempotencyKey;
   final String? matchRole;
@@ -233,14 +246,6 @@ class DlcOrder {
   final String? oracleOutcomeValue;
   final String? closingTxid;
   final String? refundTxid;
-
-  static const terminalDlcStatuses = {
-    'cet_broadcasted',
-    'refund_broadcasted',
-    'cet_closed',
-    'refund_closed',
-    'terminated',
-  };
 
   bool get isOpen => status == 'open';
   bool get needsTakerAccept =>
@@ -258,8 +263,56 @@ class DlcOrder {
         (dlcStatus == null || dlcStatus == 'offer_created');
   }
 
+  bool get isFundingPending => dlcStatus == dlcStatusSigned;
+
+  bool get isFundingBroadcasted => dlcStatus == dlcStatusFundingBroadcasted;
+
+  bool get hasFundingCompleted =>
+      isFundingBroadcasted ||
+      ((fundingTxid?.isNotEmpty ?? false) && !isFundingPending);
+
   bool get isLiveDlc =>
       dlcStatus != null && !terminalDlcStatuses.contains(dlcStatus);
+
+  bool get isSettlementEligible => isLiveDlc && hasFundingCompleted;
+
+  /// Reads a funding txid from DLC detail or funding-transaction payloads.
+  static String? fundingTxidFromDetailJson(Map<String, dynamic> json) {
+    final fundingTxid = json['funding_txid'];
+    if (fundingTxid is String && fundingTxid.isNotEmpty) {
+      return fundingTxid;
+    }
+    final txid = json['txid'];
+    if (txid is String && txid.isNotEmpty) {
+      return txid;
+    }
+    return null;
+  }
+
+  DlcOrder mergeDlcDetail(Map<String, dynamic> json) => DlcOrder(
+        orderId: orderId,
+        instrumentId: instrumentId,
+        side: side,
+        status: status,
+        quantity: quantity,
+        price: price,
+        dlcId: dlcId,
+        signRequired: signRequired,
+        isMaker: isMaker,
+        pendingMatchAccept: pendingMatchAccept,
+        dlcStatus: json['status'] as String? ?? dlcStatus,
+        fundingTxid:
+            fundingTxidFromDetailJson(json) ?? fundingTxid,
+        lastErrorReason:
+            json['last_error_reason'] as String? ?? lastErrorReason,
+        cancellationReason: cancellationReason,
+        idempotencyKey: idempotencyKey,
+        matchRole: matchRole,
+        settlementType: settlementType,
+        oracleOutcomeValue: oracleOutcomeValue,
+        closingTxid: closingTxid,
+        refundTxid: refundTxid,
+      );
 
   DlcOrder mergeSettlement(Map<String, dynamic> json) => DlcOrder(
         orderId: orderId,
@@ -274,6 +327,8 @@ class DlcOrder {
         pendingMatchAccept: pendingMatchAccept,
         dlcStatus: json['status'] as String? ?? dlcStatus,
         fundingTxid: json['funding_txid'] as String? ?? fundingTxid,
+        lastErrorReason:
+            json['last_error_reason'] as String? ?? lastErrorReason,
         cancellationReason: cancellationReason,
         idempotencyKey: idempotencyKey,
         matchRole: matchRole,
@@ -298,6 +353,7 @@ class DlcOrder {
         pendingMatchAccept: json['pending_match_accept'] as bool? ?? false,
         dlcStatus: json['dlc_status'] as String?,
         fundingTxid: json['funding_txid'] as String?,
+        lastErrorReason: json['last_error_reason'] as String?,
         cancellationReason: json['cancellation_reason'] as String?,
         idempotencyKey: json['idempotency_key'] as String?,
         matchRole: json['match_role'] as String?,

@@ -6,6 +6,7 @@ enum DlcOrderInFlightPhase {
   takerSigningAccept,
   matchedAwaitingTakerAccept,
   makerSigningDlc,
+  fundingBroadcastPending,
 }
 
 bool isDlcClosedOrder(DlcOrder order) {
@@ -61,7 +62,35 @@ DlcOrderInFlightPhase? resolveOrderInFlightPhase(DlcOrder order) {
   if (order.signRequired && !order.isMaker) {
     return DlcOrderInFlightPhase.takerSigningAccept;
   }
+  if (order.isFundingPending) {
+    return DlcOrderInFlightPhase.fundingBroadcastPending;
+  }
   return null;
+}
+
+String formatDlcStatusLabel(DlcOrder order) {
+  final status = order.dlcStatus;
+  if (status == null || status.isEmpty) {
+    return '';
+  }
+  if (status == DlcOrder.dlcStatusSigned) {
+    if (order.lastErrorReason == 'funding_broadcast_failed') {
+      return 'Funding broadcast failed';
+    }
+    return 'Funding broadcast pending';
+  }
+  if (status == DlcOrder.dlcStatusFundingBroadcasted) {
+    return 'Funding broadcasted, awaiting oracle maturity';
+  }
+  return status.replaceAll('_', ' ');
+}
+
+String formatOrderStatusLine(DlcOrder order) {
+  final dlcLabel = formatDlcStatusLabel(order);
+  if (dlcLabel.isNotEmpty) {
+    return dlcLabel;
+  }
+  return order.status;
 }
 
 String formatDlcOrderRole(DlcOrder order) {
@@ -106,4 +135,40 @@ String? bestAskPremiumSats(DlcStrikeOrderbookSnapshot snapshot) {
     return null;
   }
   return asks.first.price.toString();
+}
+
+String dlcMempoolTxUrl({
+  required String txid,
+  required bool isTestnet,
+}) {
+  final base = isTestnet
+      ? 'https://mempool.space/testnet/tx'
+      : 'https://mempool.space/tx';
+  return '$base/$txid';
+}
+
+String? liveOrderFundingTxid(DlcOrder order) {
+  if (!order.isFundingBroadcasted) {
+    return null;
+  }
+  final txid = order.fundingTxid;
+  if (txid == null || txid.isEmpty) {
+    return null;
+  }
+  return txid;
+}
+
+List<({String label, String txid})> orderSettlementExplorerLinks(
+  DlcOrder order,
+) {
+  final links = <({String label, String txid})>[];
+  final closingTxid = order.closingTxid;
+  if (closingTxid != null && closingTxid.isNotEmpty) {
+    links.add((label: 'Settlement TX', txid: closingTxid));
+  }
+  final refundTxid = order.refundTxid;
+  if (refundTxid != null && refundTxid.isNotEmpty) {
+    links.add((label: 'Refund TX', txid: refundTxid));
+  }
+  return links;
 }

@@ -16,6 +16,7 @@ import 'package:aqua/logger.dart';
 import 'package:rxdart/rxdart.dart';
 
 const kConnectionTimeout = Duration(seconds: 5);
+const kOverallConnectionTimeout = Duration(seconds: 30);
 
 final aquaConnectionProvider =
     AsyncNotifierProvider<AquaConnectionNotifier, void>(
@@ -47,88 +48,116 @@ class AquaConnectionNotifier extends AsyncNotifier<void> {
     await disconnect();
 
     try {
-      final (currentWalletId, _) = await ref
-          .read(secureStorageProvider)
-          .get(StorageKeys.currentWalletId);
-      if (currentWalletId == null) {
-        throw Exception('Falied to get current wallet ID');
-      }
-
-      final (mnemonic, err) = await ref
-          .read(secureStorageProvider)
-          .get(StorageKeys.mnemonic(currentWalletId));
-      if (err != null || mnemonic == null) {
-        throw AquaProviderInvalidMnemonicException();
-      }
-
-      final credentials = GdkLoginCredentials(mnemonic: mnemonic);
-
-      // Connect to Liquid with timeout
-      await ref.read(liquidProvider).connect().timeout(
-        kConnectionTimeout,
+      await _connectInternal().timeout(
+        kOverallConnectionTimeout,
         onTimeout: () {
-          logger.warning('[AquaConnectionProvider] Liquid connection timeout');
-          return false;
+          throw TimeoutException(
+            'Wallet connection timed out after '
+            '${kOverallConnectionTimeout.inSeconds}s',
+          );
         },
       );
-      final liquidWalletId =
-          await ref.read(liquidProvider).loginUser(credentials: credentials);
-      if (liquidWalletId == null || liquidWalletId.isEmpty) {
-        throw AquaProviderLiquidAuthFailureException();
-      }
-
-      // Connect to Bitcoin with timeout
-      await ref.read(bitcoinProvider).connect().timeout(
-        kConnectionTimeout,
-        onTimeout: () {
-          logger.warning('[AquaConnectionProvider] Bitcoin connection timeout');
-          return false;
-        },
-      );
-      final bitcoinWalletId =
-          await ref.read(bitcoinProvider).loginUser(credentials: credentials);
-      if (bitcoinWalletId == null || bitcoinWalletId.isEmpty) {
-        throw AquaProviderBitcoinAuthFailureException();
-      }
-      final subaccount = await ref.read(bitcoinProvider).getSubaccount(1);
-      if (subaccount == null) {
-        await ref.read(bitcoinProvider).createSegwitSubaccount();
-      }
-      final liquidSubaccounts = await ref.read(liquidProvider).getSubaccounts();
-      if (liquidSubaccounts == null || liquidSubaccounts.isEmpty) {
-        throw AquaProviderLiquidAuthFailureException();
-      }
-      // Get the core descriptors for the Liquid subaccount
-      final liquidCoreDescriptors = liquidSubaccounts[0].coreDescriptors;
-      if (liquidCoreDescriptors == null || liquidCoreDescriptors.isEmpty) {
-        throw AquaProviderLiquidAuthFailureException();
-      }
-      // assuming the first descriptor is the CtDescriptor
-      final ctDescriptor = liquidCoreDescriptors[0];
-      final ctDescriptorWithChangePath =
-          WalletUtils.addChangePathToDescriptor(ctDescriptor);
-      await ref.read(lwkProvider).init();
-      await ref.read(lwkProvider).loginUser(
-          credentials: credentials,
-          liquidCtDescriptor: ctDescriptorWithChangePath);
-
-      ref.read(lwkProvider).syncWallet();
-      // Initialize the network event stream after successful connection
-      ref.read(aquaProvider).initNetworkEventStream();
-
-      logger.debug('[AquaConnectionProvider] Connected');
-
-      // Start listening to connectivity changes events after
-      // initial connection has been established
-      _startConnectivityListening();
-
-      // Refresh price and rate providers using the helper method
-      _refreshRateProviders();
       state = const AsyncValue.data(null);
     } catch (error) {
       logger.debug('[AquaConnectionProvider] Failed to connect');
       state = AsyncValue.error(error, StackTrace.current);
     }
+  }
+
+  Future<void> _connectInternal() async {
+    final (currentWalletId, _) = await ref
+        .read(secureStorageProvider)
+        .get(StorageKeys.currentWalletId);
+    if (currentWalletId == null) {
+      throw Exception('Falied to get current wallet ID');
+    }
+
+    final (mnemonic, err) = await ref
+        .read(secureStorageProvider)
+        .get(StorageKeys.mnemonic(currentWalletId));
+    if (err != null || mnemonic == null) {
+      throw AquaProviderInvalidMnemonicException();
+    }
+
+    final credentials = GdkLoginCredentials(mnemonic: mnemonic);
+
+    // Connect to Liquid with timeout
+    await ref.read(liquidProvider).connect().timeout(
+      kConnectionTimeout,
+      onTimeout: () {
+        logger.warning('[AquaConnectionProvider] Liquid connection timeout');
+        return false;
+      },
+    );
+    final liquidWalletId = await ref
+        .read(liquidProvider)
+        .loginUser(credentials: credentials)
+        .timeout(
+      kConnectionTimeout,
+      onTimeout: () {
+        logger.warning('[AquaConnectionProvider] Liquid login timeout');
+        return null;
+      },
+    );
+    if (liquidWalletId == null || liquidWalletId.isEmpty) {
+      throw AquaProviderLiquidAuthFailureException();
+    }
+
+    // Connect to Bitcoin with timeout
+    await ref.read(bitcoinProvider).connect().timeout(
+      kConnectionTimeout,
+      onTimeout: () {
+        logger.warning('[AquaConnectionProvider] Bitcoin connection timeout');
+        return false;
+      },
+    );
+    final bitcoinWalletId = await ref
+        .read(bitcoinProvider)
+        .loginUser(credentials: credentials)
+        .timeout(
+      kConnectionTimeout,
+      onTimeout: () {
+        logger.warning('[AquaConnectionProvider] Bitcoin login timeout');
+        return null;
+      },
+    );
+    if (bitcoinWalletId == null || bitcoinWalletId.isEmpty) {
+      throw AquaProviderBitcoinAuthFailureException();
+    }
+    final subaccount = await ref.read(bitcoinProvider).getSubaccount(1);
+    if (subaccount == null) {
+      await ref.read(bitcoinProvider).createSegwitSubaccount();
+    }
+    final liquidSubaccounts = await ref.read(liquidProvider).getSubaccounts();
+    if (liquidSubaccounts == null || liquidSubaccounts.isEmpty) {
+      throw AquaProviderLiquidAuthFailureException();
+    }
+    // Get the core descriptors for the Liquid subaccount
+    final liquidCoreDescriptors = liquidSubaccounts[0].coreDescriptors;
+    if (liquidCoreDescriptors == null || liquidCoreDescriptors.isEmpty) {
+      throw AquaProviderLiquidAuthFailureException();
+    }
+    // assuming the first descriptor is the CtDescriptor
+    final ctDescriptor = liquidCoreDescriptors[0];
+    final ctDescriptorWithChangePath =
+        WalletUtils.addChangePathToDescriptor(ctDescriptor);
+    await ref.read(lwkProvider).init();
+    await ref.read(lwkProvider).loginUser(
+        credentials: credentials,
+        liquidCtDescriptor: ctDescriptorWithChangePath);
+
+    ref.read(lwkProvider).syncWallet();
+    // Initialize the network event stream after successful connection
+    ref.read(aquaProvider).initNetworkEventStream();
+
+    logger.debug('[AquaConnectionProvider] Connected');
+
+    // Start listening to connectivity changes events after
+    // initial connection has been established
+    _startConnectivityListening();
+
+    // Refresh price and rate providers using the helper method
+    _refreshRateProviders();
   }
 
   Future<void> disconnect() async {

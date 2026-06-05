@@ -47,4 +47,16 @@ abstract class Secrets {
 
   @EnviedField(varName: 'DLC_SHOW_EXPIRED_INSTRUMENTS', defaultValue: false)
   static final bool kDlcShowExpiredInstruments = _Secrets.kDlcShowExpiredInstruments;
+
+  @EnviedField(
+    varName: 'DLC_EXPLORER_URL',
+    defaultValue: 'http://backend.coldpay.de:8300/',
+  )
+  static final String kDlcExplorerUrl = _Secrets.kDlcExplorerUrl;
+
+  @EnviedField(
+    varName: 'DLC_EXPLORER_TEST_URL',
+    defaultValue: 'http://backend.coldpay.de:8300/',
+  )
+  static final String kDlcExplorerTestUrl = _Secrets.kDlcExplorerTestUrl;
 }

@@ -264,6 +264,16 @@ class DlcApiService {
     );
   }
 
+  Future<Map<String, dynamic>> getFundingTransaction({
+    required String walletToken,
+    required String dlcId,
+  }) async {
+    return _get<Map<String, dynamic>>(
+      '/dlcs/$dlcId/funding-transaction',
+      options: _bearerOptions(walletToken),
+    );
+  }
+
   Future<Map<String, dynamic>> getSettlementStatus({
     required String walletToken,
     required String dlcId,

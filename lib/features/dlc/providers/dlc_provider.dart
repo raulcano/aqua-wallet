@@ -315,7 +315,10 @@ class DlcNotifier extends StateNotifier<DlcState> {
 
     if (auth != null && !auth.isExpired) {
       try {
-        orders = await _repository.listOrders(auth);
+        orders = await _repository.listOrders(
+          auth,
+          enrichSettlement: true,
+        );
         instruments = await _repository.listInstruments(auth.walletToken);
       } on DlcApiException catch (e) {
         if (e.statusCode == 401 || e.statusCode == 403) {
@@ -538,7 +541,7 @@ class DlcNotifier extends StateNotifier<DlcState> {
 
   void _syncNegotiationScheduling() {
     final shouldPoll =
-        state.isRegistered && state.orders.any(orderNeedsNegotiation);
+        state.isRegistered && state.orders.any(orderNeedsDlcBackgroundWork);
     if (!shouldPoll) {
       _negotiationPollTimer?.cancel();
       _negotiationPollTimer = null;
@@ -565,7 +568,7 @@ class DlcNotifier extends StateNotifier<DlcState> {
     if (auth == null || walletId == null) {
       return;
     }
-    if (!state.orders.any(orderNeedsNegotiation)) {
+    if (!state.orders.any(orderNeedsDlcBackgroundWork)) {
       _syncNegotiationScheduling();
       return;
     }
@@ -848,7 +851,7 @@ class DlcNotifier extends StateNotifier<DlcState> {
     try {
       final loaded = await Future.wait([
         _repository.listInstruments(auth.walletToken),
-        _repository.listOrders(auth),
+        _repository.listOrders(auth, enrichSettlement: true),
       ]);
       final instruments = loaded[0] as List<DlcInstrument>;
       final orders = loaded[1] as List<DlcOrder>;
@@ -1012,7 +1015,10 @@ class DlcNotifier extends StateNotifier<DlcState> {
         orderId: orderId,
         mnemonic: mnemonic,
       );
-      final orders = await _repository.listOrders(auth);
+      final orders = await _repository.listOrders(
+        auth,
+        enrichSettlement: true,
+      );
       state = state.copyWith(
         processingOrder: false,
         orders: orders,

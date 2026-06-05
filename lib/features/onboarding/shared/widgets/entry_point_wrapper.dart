@@ -40,7 +40,6 @@ class EntryPointWrapper extends HookConsumerWidget {
 
     final initAppState = ref.watch(initAppProvider);
     final storedWalletsState = ref.watch(storedWalletsProvider);
-    final aquaConnectionState = ref.watch(aquaConnectionProvider);
 
     ref.listen(storedWalletsProvider, (prev, next) {
       next.whenData((walletState) {
@@ -59,22 +58,15 @@ class EntryPointWrapper extends HookConsumerWidget {
       data: (_) => storedWalletsState.when(
         data: (walletState) {
           if (walletState.currentWallet != null) {
-            return aquaConnectionState.when(
-              data: (_) => isDesktop
-                  ? DesktopHomeScreen(
-                      key: ValueKey(_EntryScreenKey.desktopHome.name),
-                    )
-                  : HomeScreen(
-                      key: ValueKey(_EntryScreenKey.home.name),
-                    ),
-              error: (_, __) => HomeScreen(
-                key: ValueKey(_EntryScreenKey.home.name),
-              ),
-              loading: () => SplashScreen(
-                key: ValueKey(_EntryScreenKey.splash.name),
-                tagline: selectedTagline,
-              ),
-            );
+            // Do not block the home screen on electrum connection; initApp
+            // already starts connect() in the background.
+            return isDesktop
+                ? DesktopHomeScreen(
+                    key: ValueKey(_EntryScreenKey.desktopHome.name),
+                  )
+                : HomeScreen(
+                    key: ValueKey(_EntryScreenKey.home.name),
+                  );
           }
           return WelcomeScreen(
             key: ValueKey(_EntryScreenKey.welcome.name),

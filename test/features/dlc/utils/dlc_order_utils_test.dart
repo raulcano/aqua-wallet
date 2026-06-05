@@ -164,6 +164,112 @@ void main() {
         isFalse,
       );
     });
+
+    test('signed DLC shows funding pending label', () {
+      final order = _order(status: 'filled', dlcStatus: 'signed', dlcId: 'dlc-1');
+
+      expect(formatDlcStatusLabel(order), 'Funding broadcast pending');
+      expect(
+        resolveOrderInFlightPhase(order),
+        DlcOrderInFlightPhase.fundingBroadcastPending,
+      );
+    });
+
+    test('signed with funding broadcast failure shows failed label', () {
+      final order = DlcOrder(
+        orderId: 'order-1',
+        instrumentId: 'BTCUSD-90000-C',
+        side: 'sell',
+        status: 'filled',
+        quantity: 1,
+        dlcId: 'dlc-1',
+        dlcStatus: 'signed',
+        lastErrorReason: 'funding_broadcast_failed',
+      );
+
+      expect(formatDlcStatusLabel(order), 'Funding broadcast failed');
+    });
+
+    test('funding_broadcasted shows maturity label', () {
+      final order = _order(
+        status: 'filled',
+        dlcStatus: 'funding_broadcasted',
+        dlcId: 'dlc-1',
+      );
+
+      expect(
+        formatDlcStatusLabel(order),
+        'Funding broadcasted, awaiting oracle maturity',
+      );
+      expect(order.hasFundingCompleted, isTrue);
+      expect(order.isSettlementEligible, isTrue);
+    });
+  });
+
+  group('mempool explorer links', () {
+    test('builds mainnet and testnet tx urls', () {
+      expect(
+        dlcMempoolTxUrl(txid: 'abc123', isTestnet: false),
+        'https://mempool.space/tx/abc123',
+      );
+      expect(
+        dlcMempoolTxUrl(txid: 'abc123', isTestnet: true),
+        'https://mempool.space/testnet/tx/abc123',
+      );
+    });
+
+    test('fundingTxidFromDetailJson reads funding_txid or txid', () {
+      expect(
+        DlcOrder.fundingTxidFromDetailJson({'funding_txid': 'abc'}),
+        'abc',
+      );
+      expect(
+        DlcOrder.fundingTxidFromDetailJson({'txid': 'def'}),
+        'def',
+      );
+      expect(DlcOrder.fundingTxidFromDetailJson({}), isNull);
+    });
+
+    test('live funding txid only when funding_broadcasted', () {
+      final funded = DlcOrder(
+        orderId: 'order-1',
+        instrumentId: 'BTCUSD-90000-C',
+        side: 'sell',
+        status: 'filled',
+        quantity: 1,
+        dlcStatus: 'funding_broadcasted',
+        fundingTxid: 'funding-tx',
+      );
+      final signed = DlcOrder(
+        orderId: 'order-1',
+        instrumentId: 'BTCUSD-90000-C',
+        side: 'sell',
+        status: 'filled',
+        quantity: 1,
+        dlcStatus: 'signed',
+        fundingTxid: 'funding-tx',
+      );
+
+      expect(liveOrderFundingTxid(funded), 'funding-tx');
+      expect(liveOrderFundingTxid(signed), isNull);
+    });
+
+    test('settlement explorer links include closing and refund txids', () {
+      final order = DlcOrder(
+        orderId: 'order-1',
+        instrumentId: 'BTCUSD-90000-C',
+        side: 'sell',
+        status: 'filled',
+        quantity: 1,
+        closingTxid: 'close-tx',
+        refundTxid: 'refund-tx',
+      );
+
+      expect(
+        orderSettlementExplorerLinks(order).map((link) => link.label).toList(),
+        ['Settlement TX', 'Refund TX'],
+      );
+    });
   });
 
   group('closed orders', () {

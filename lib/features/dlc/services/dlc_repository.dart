@@ -348,7 +348,7 @@ class DlcRepository {
       return orders;
     }
     return Future.wait(
-      orders.map((order) => _enrichOrderSettlement(auth, order)),
+      orders.map((order) => _enrichOrder(auth, order)),
     );
   }
 
@@ -442,7 +442,7 @@ class DlcRepository {
     required DlcWalletAuth auth,
     required String mnemonic,
   }) async {
-    final orders = await listOrders(auth);
+    var orders = await listOrders(auth);
     DlcApiException? lastError;
     for (final order in orders) {
       if (!orderNeedsNegotiation(order)) {
@@ -470,6 +470,18 @@ class DlcRepository {
         lastError = e;
       }
     }
+
+    orders = await listOrders(auth);
+    try {
+      await _runFundingMonitorPass(
+        auth: auth,
+        mnemonic: mnemonic,
+        orders: orders,
+      );
+    } on DlcApiException catch (e) {
+      lastError ??= e;
+    }
+
     if (lastError != null) {
       throw lastError;
     }
@@ -617,20 +629,9 @@ class DlcRepository {
         refundSignatureHex: signatures.refundSignatureHex,
         fundingSignaturesHex: signatures.fundingSignaturesHex,
       );
-      final fundingBroadcastError =
-          signResponse['funding_broadcast_error'] as String?;
-      if (fundingBroadcastError != null && fundingBroadcastError.isNotEmpty) {
-        throw DlcApiException(
-          message: 'Funding transaction broadcast failed: $fundingBroadcastError',
-        );
-      }
       final fundingTxid = signResponse['funding_txid'] as String?;
-      if (fundingTxid == null || fundingTxid.isEmpty) {
-        throw DlcApiException(
-          message:
-              'Sign accepted but funding transaction was not broadcast. '
-              'Check funding signatures and wallet UTXO keys.',
-        );
+      if (fundingTxid != null && fundingTxid.isNotEmpty) {
+        await syncWalletUtxos(auth: auth, mnemonic: mnemonic);
       }
     } on DlcApiException catch (e) {
       if (isDlcContextMismatch(e)) {
@@ -641,7 +642,133 @@ class DlcRepository {
       }
       rethrow;
     }
-    await syncWalletUtxos(auth: auth, mnemonic: mnemonic);
+  }
+
+  Future<void> _runFundingMonitorPass({
+    required DlcWalletAuth auth,
+    required String mnemonic,
+    required List<DlcOrder> orders,
+  }) async {
+    for (final order in orders) {
+      if (!orderNeedsFundingMonitor(order)) {
+        continue;
+      }
+      try {
+        await _pollOrderFundingStatus(
+          auth: auth,
+          mnemonic: mnemonic,
+          order: order,
+        );
+      } on DlcApiException catch (e) {
+        if (e.statusCode == 404) {
+          continue;
+        }
+        rethrow;
+      }
+    }
+  }
+
+  Future<DlcOrder> _pollOrderFundingStatus({
+    required DlcWalletAuth auth,
+    required String mnemonic,
+    required DlcOrder order,
+  }) async {
+    final updated = await _fetchDlcFundingDetail(auth: auth, order: order);
+
+    if (shouldSyncUtxosForFundingTransition(order, updated)) {
+      await syncWalletUtxos(auth: auth, mnemonic: mnemonic);
+    }
+
+    return updated;
+  }
+
+  Future<DlcOrder> _fetchDlcFundingDetail({
+    required DlcWalletAuth auth,
+    required DlcOrder order,
+  }) async {
+    final dlcId = order.dlcId;
+    if (dlcId == null || dlcId.isEmpty) {
+      return order;
+    }
+
+    try {
+      var updated = order.mergeDlcDetail(
+        await _api.getDlc(walletToken: auth.walletToken, dlcId: dlcId),
+      );
+
+      final hasFundingTxid =
+          updated.fundingTxid != null && updated.fundingTxid!.isNotEmpty;
+      if (!hasFundingTxid) {
+        try {
+          updated = updated.mergeDlcDetail(
+            await _api.getFundingTransaction(
+              walletToken: auth.walletToken,
+              dlcId: dlcId,
+            ),
+          );
+        } on DlcApiException catch (e) {
+          if (e.statusCode != 404) {
+            rethrow;
+          }
+        }
+      }
+
+      return updated;
+    } on DlcApiException catch (e) {
+      if (e.statusCode == 404) {
+        return order;
+      }
+      rethrow;
+    }
+  }
+
+  bool _orderNeedsFundingTxEnrichment(DlcOrder order) {
+    if (order.dlcId == null || order.dlcId!.isEmpty) {
+      return false;
+    }
+    if (orderNeedsFundingMonitor(order) || order.isFundingPending) {
+      return true;
+    }
+    final fundingTxid = order.fundingTxid;
+    final missingFundingTxid = fundingTxid == null || fundingTxid.isEmpty;
+    return order.isFundingBroadcasted && missingFundingTxid;
+  }
+
+  Future<DlcOrder> _enrichOrder(
+    DlcWalletAuth auth,
+    DlcOrder order,
+  ) async {
+    var enriched = order;
+    if (_orderNeedsFundingTxEnrichment(order)) {
+      enriched = await _fetchDlcFundingDetail(auth: auth, order: order);
+    }
+
+    if (enriched.isSettlementEligible) {
+      enriched = await _enrichOrderSettlement(auth, enriched);
+    }
+    return enriched;
+  }
+
+  Future<DlcOrder> _enrichOrderSettlement(
+    DlcWalletAuth auth,
+    DlcOrder order,
+  ) async {
+    final dlcId = order.dlcId;
+    if (dlcId == null || dlcId.isEmpty || !order.isSettlementEligible) {
+      return order;
+    }
+    try {
+      final settlement = await _api.getSettlementStatus(
+        walletToken: auth.walletToken,
+        dlcId: dlcId,
+      );
+      return order.mergeSettlement(settlement);
+    } on DlcApiException catch (e) {
+      if (e.statusCode == 404) {
+        return order;
+      }
+      rethrow;
+    }
   }
 
   Future<DlcOrderResponse?> _reconcileCreatedOrder({
@@ -661,28 +788,6 @@ class DlcRepository {
       }
     }
     return null;
-  }
-
-  Future<DlcOrder> _enrichOrderSettlement(
-    DlcWalletAuth auth,
-    DlcOrder order,
-  ) async {
-    final dlcId = order.dlcId;
-    if (dlcId == null || dlcId.isEmpty || !order.isLiveDlc) {
-      return order;
-    }
-    try {
-      final settlement = await _api.getSettlementStatus(
-        walletToken: auth.walletToken,
-        dlcId: dlcId,
-      );
-      return order.mergeSettlement(settlement);
-    } on DlcApiException catch (e) {
-      if (e.statusCode == 404) {
-        return order;
-      }
-      rethrow;
-    }
   }
 }
 
