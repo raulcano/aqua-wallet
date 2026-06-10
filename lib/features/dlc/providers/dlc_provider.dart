@@ -246,6 +246,10 @@ class DlcNotifier extends StateNotifier<DlcState> {
         'DLC partner token is not configured in .env',
     ];
 
+    // One-time cutover: drop accept/sign idempotency keys cached against the
+    // previous (per-counterparty) DLC deployment. Safe to call repeatedly.
+    await _repository.applyCanonicalDlcCutoverIfNeeded();
+
     var auth = await _repository.loadAuth(wallet.id);
     DlcWalletSyncResult? balances;
     List<DlcOrder> orders = const [];
@@ -900,7 +904,6 @@ class DlcNotifier extends StateNotifier<DlcState> {
       side: side,
       status: matchIntent ? 'pending_accept' : 'open',
       quantity: quantity,
-      pendingMatchAccept: matchIntent,
     );
 
     var books = state.strikeOrderbooks;

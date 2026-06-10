@@ -99,6 +99,24 @@ class DlcIdempotencyStorage {
     await _save(data);
   }
 
+  /// One-time cutover for the "one canonical DLC per trade" coordinator
+  /// deployment. Drops every cached accept/sign idempotency key so we don't
+  /// replay a signature generated against a now-deleted DLC.
+  ///
+  /// Create-order draft keys are preserved so an order the user just submitted
+  /// can still be reconciled by idempotency key after a network blip.
+  Future<bool> applyCanonicalDlcCutoverIfNeeded() async {
+    final data = await _load();
+    if (data['canonicalDlcCutoverApplied'] == true) {
+      return false;
+    }
+    data['acceptByOrder'] = <String, String>{};
+    data['signByDlc'] = <String, String>{};
+    data['canonicalDlcCutoverApplied'] = true;
+    await _save(data);
+    return true;
+  }
+
   Future<Map<String, dynamic>> _load() async {
     final (raw, err) = await _storage.get(_key);
     if (err != null || raw == null || raw.isEmpty) {

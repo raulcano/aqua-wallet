@@ -180,7 +180,9 @@ class _CompactOrderEntry extends ConsumerWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${order.side.toUpperCase()} · ${formatDlcOrderRole(order)} · ${formatOrderStatusLine(order)}',
+                    '${order.side.toUpperCase()} · '
+                    'You: ${formatDlcOrderRole(order)} · '
+                    '${formatOrderStatusLine(order)}',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: sideColor,
                         ),
@@ -377,7 +379,18 @@ void _showOrderInfoDialog(
               ),
             if (order.dlcId != null && order.dlcId!.isNotEmpty)
               _InfoRow('DLC ID', order.dlcId!, selectable: true),
+            if (order.currentExecution != null &&
+                order.currentExecution!.tradeId.isNotEmpty)
+              _InfoRow(
+                'Trade ID',
+                order.currentExecution!.tradeId,
+                selectable: true,
+              ),
             _InfoRow('Order ID', order.orderId, selectable: true),
+            if (order.executions.length > 1) ...[
+              const SizedBox(height: 4),
+              _ExecutionHistoryBlock(order: order),
+            ],
           ],
         ),
       ),
@@ -442,6 +455,54 @@ class _InfoLinkRow extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _ExecutionHistoryBlock extends StatelessWidget {
+  const _ExecutionHistoryBlock({required this.order});
+
+  final DlcOrder order;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Execution history', style: textTheme.labelSmall),
+        const SizedBox(height: 4),
+        for (var i = 0; i < order.executions.length; i++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(
+              _formatExecutionLine(i + 1, order.executions[i]),
+              style: textTheme.bodySmall,
+            ),
+          ),
+      ],
+    );
+  }
+
+  static String _formatExecutionLine(int index, DlcOrderExecution execution) {
+    final pieces = <String>[
+      '#$index',
+      execution.role == DlcExecutionRole.maker ? 'maker' : 'taker',
+      execution.status,
+      if (execution.dlcStatus != null) 'dlc=${execution.dlcStatus}',
+      if (execution.tradeId.isNotEmpty)
+        'trade=${_shortHash(execution.tradeId)}',
+    ];
+    final base = pieces.join(' · ');
+    final reason = execution.lastErrorReason;
+    if (reason != null && reason.isNotEmpty) {
+      return '$base — $reason';
+    }
+    return base;
+  }
+
+  static String _shortHash(String value) {
+    if (value.length <= 12) return value;
+    return '${value.substring(0, 6)}…${value.substring(value.length - 4)}';
   }
 }
 

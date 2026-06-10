@@ -7,6 +7,9 @@ DlcOrder _order({
   String? dlcId = 'dlc-1',
   String? dlcStatus,
   String status = 'filled',
+  DlcExecutionRole role = DlcExecutionRole.taker,
+  String executionStatus = DlcOrderExecution.statusExecuted,
+  String? fundingTxid,
 }) {
   return DlcOrder(
     orderId: 'order-1',
@@ -14,8 +17,21 @@ DlcOrder _order({
     side: 'sell',
     status: status,
     quantity: 1,
+    executions: dlcId == null
+        ? const <DlcOrderExecution>[]
+        : <DlcOrderExecution>[
+            DlcOrderExecution(
+              tradeId: 'trade-1',
+              dlcId: dlcId,
+              role: role,
+              status: executionStatus,
+            ),
+          ],
+    // Coordinator returns DLC live state at the order's top level, not on
+    // individual executions; mirror that in the test fixture.
     dlcId: dlcId,
     dlcStatus: dlcStatus,
+    fundingTxid: fundingTxid,
   );
 }
 
@@ -62,13 +78,7 @@ void main() {
 
     test('shouldSyncUtxosForFundingTransition detects first funding txid', () {
       final before = _order(dlcStatus: 'signed');
-      final after = DlcOrder(
-        orderId: before.orderId,
-        instrumentId: before.instrumentId,
-        side: before.side,
-        status: before.status,
-        quantity: before.quantity,
-        dlcId: before.dlcId,
+      final after = _order(
         dlcStatus: DlcOrder.dlcStatusFundingBroadcasted,
         fundingTxid: 'abc123',
       );

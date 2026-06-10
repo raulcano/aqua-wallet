@@ -156,6 +156,11 @@ class DlcRepository {
     );
   }
 
+  /// One-time cleanup of stale accept/sign idempotency keys after migrating to
+  /// the canonical-DLC coordinator deployment.
+  Future<void> applyCanonicalDlcCutoverIfNeeded() =>
+      _idempotencyStorage.applyCanonicalDlcCutoverIfNeeded();
+
   Future<List<DlcInstrument>> listInstruments(String? walletToken) =>
       _api.listInstruments(
         instrumentsPath: _config.instrumentsPath,
@@ -285,6 +290,9 @@ class DlcRepository {
           request: DlcOptionPayoutSimulationRequest(
             side: order.side,
             role: order.isMaker ? 'maker' : 'taker',
+            // ^ best-effort role for premium-simulation UI; unknown role
+            // (resting unmatched orders) falls back to taker which is fine for
+            // estimation purposes.
             optionRight: optionRight,
             numContracts: order.quantity,
             strike: strike,
@@ -450,17 +458,25 @@ class DlcRepository {
       }
       try {
         if (order.needsTakerAccept) {
+          // Taker accepts via `POST /orders/{order_id}/accept-match`.
+          // Server side this is only valid when the wallet's order is on the
+          // taker side of the canonical DLC.
           await _submitTakerAccept(
             auth: auth,
             mnemonic: mnemonic,
             order: order,
           );
-        } else if (order.needsMakerSign && order.dlcId != null) {
+        } else if (order.needsMakerSign) {
+          final dlcId = order.dlcId;
+          if (dlcId == null || dlcId.isEmpty) {
+            continue;
+          }
+          // Maker signs against `POST /dlcs/{canonical_dlc_id}/sign`.
           await _submitMakerSign(
             auth: auth,
             mnemonic: mnemonic,
             order: order,
-            dlcId: order.dlcId!,
+            dlcId: dlcId,
           );
         }
       } on DlcApiException catch (e) {
@@ -780,10 +796,10 @@ class DlcRepository {
       if (order.idempotencyKey == idempotencyKey) {
         return DlcOrderResponse(
           orderId: order.orderId,
-          dlcId: order.dlcId ?? '',
           status: order.status,
-          pendingMatchAccept: order.pendingMatchAccept,
-          signRequired: order.signRequired,
+          dlcId: order.dlcId,
+          offerObjectHex: order.draftOfferObjectHex,
+          executions: order.executions,
         );
       }
     }

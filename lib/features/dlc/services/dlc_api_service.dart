@@ -186,6 +186,19 @@ class DlcApiService {
     return _get<Map<String, dynamic>>('/orderbook/$instrumentId');
   }
 
+  /// Optional helper for callers that want explicit signing counts before
+  /// fetching the full accept context.
+  Future<Map<String, dynamic>> getAcceptContextCounts({
+    required String walletToken,
+    required String orderId,
+  }) async {
+    return _post<Map<String, dynamic>>(
+      '/orders/$orderId/accept-context-counts',
+      {},
+      options: DlcCoordinatorHttp.bearerWriteOptions(walletToken),
+    );
+  }
+
   Future<Map<String, dynamic>> simulateOptionPayout({
     String? walletToken,
     required Map<String, dynamic> body,

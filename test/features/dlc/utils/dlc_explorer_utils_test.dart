@@ -9,7 +9,18 @@ DlcOrder _order({String? dlcId = 'dlc-123'}) {
     side: 'sell',
     status: 'filled',
     quantity: 1,
+    executions: dlcId == null
+        ? const <DlcOrderExecution>[]
+        : <DlcOrderExecution>[
+            DlcOrderExecution(
+              tradeId: 'trade-1',
+              dlcId: dlcId,
+              role: DlcExecutionRole.maker,
+              status: DlcOrderExecution.statusExecuted,
+            ),
+          ],
     dlcId: dlcId,
+    dlcStatus: dlcId == null ? null : 'funding_broadcasted',
   );
 }
 
